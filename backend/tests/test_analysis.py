@@ -12,6 +12,7 @@ from app.api.schemas import (
 )
 from app.analysis.service import DatasetAnalysisService
 from app.analysis.exploratory import ExploratoryAnalyzer, ExploratoryAnalysisError
+from app.demo import demo_analysis
 from app.profiling.profiler import DataProfiler
 
 
@@ -136,6 +137,31 @@ def test_analysis_is_cached_and_score_is_python_recomputed() -> None:
     assert gemini.assessment_calls == 1
     assert first.assessment is not None
     assert first.assessment.final_score == 80
+
+
+def test_demo_analysis_reports_only_verified_statistics() -> None:
+    response = demo_analysis()
+
+    assert response.ai_assessment_status == "unavailable"
+    assert response.assessment is not None
+    assert response.assessment.final_score is None
+    assert all(
+        criterion["score"] is None
+        for criterion in response.assessment.criteria.model_dump().values()
+    )
+    g3 = next(column for column in response.profile.columns if column.name == "G3")
+    assert g3.numeric_summary is not None
+    assert g3.numeric_summary.mean == pytest.approx(11.906009244992296)
+    assert g3.numeric_summary.median == 12
+    studytime = next(
+        column for column in response.profile.columns if column.name == "studytime"
+    )
+    assert studytime.numeric_summary is not None
+    assert studytime.numeric_summary.mean == pytest.approx(1.9306625577812018)
+    assert {item.research_variable for item in response.profile.research_variable_evidence} == {
+        "study time",
+        "academic performance",
+    }
 
 
 def test_invalid_dataset_id_is_rejected() -> None:

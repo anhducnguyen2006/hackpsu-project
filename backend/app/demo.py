@@ -11,6 +11,7 @@ from app.api.schemas import (
     NumericSummary,
     ResearchAssessment,
     ResearchInterpretation,
+    ResearchVariableEvidence,
     SuitabilityCriteria,
     SuitabilityCriterion,
     UCIRecord,
@@ -122,7 +123,16 @@ def demo_analysis() -> DatasetAnalysisResponse:
             is_constant=False,
             is_near_empty=False,
             research_roles=["independent"],
-            numeric_summary=NumericSummary(count=649, mean=2.0647, median=2),
+            numeric_summary=NumericSummary(
+                count=649,
+                mean=1.9306625577812018,
+                median=2,
+                standard_deviation=0.829509574636615,
+                minimum=1,
+                percentile_25=1,
+                percentile_75=2,
+                maximum=4,
+            ),
             categorical_summary=[
                 CategoryCount(value=2, count=305),
                 CategoryCount(value=1, count=212),
@@ -140,7 +150,16 @@ def demo_analysis() -> DatasetAnalysisResponse:
             is_constant=False,
             is_near_empty=False,
             research_roles=["outcome"],
-            numeric_summary=NumericSummary(count=649, mean=11.906, median=11),
+            numeric_summary=NumericSummary(
+                count=649,
+                mean=11.906009244992296,
+                median=12,
+                standard_deviation=3.230656242804805,
+                minimum=0,
+                percentile_25=10,
+                percentile_75=14,
+                maximum=19,
+            ),
         ),
     ]
     profile = DataProfile(
@@ -149,34 +168,55 @@ def demo_analysis() -> DatasetAnalysisResponse:
         column_names=["studytime", "G3"],
         duplicate_row_count=0,
         columns=columns,
+        research_variable_evidence=[
+            ResearchVariableEvidence(
+                research_variable="study time",
+                matched_columns=["studytime"],
+                usable_observations=649,
+                notes=[
+                    "Verified UCI codebook mapping: studytime is weekly study time encoded from 1 to 4."
+                ],
+            ),
+            ResearchVariableEvidence(
+                research_variable="academic performance",
+                matched_columns=["G3"],
+                usable_observations=649,
+                notes=[
+                    "Verified UCI codebook mapping: G3 is the final grade on a 0–20 scale."
+                ],
+            ),
+        ],
         quality_flags=[
-            "DEMO_MODE: cached profile from a previous successful UCI retrieval.",
+            "DEMO_MODE: cached Pandas profile from a previous successful UCI retrieval.",
             "Row count is not necessarily the number of independent participants.",
         ],
     )
-    criterion = SuitabilityCriterion(score=86, explanation="Cached verified assessment evidence.")
+    unavailable_criterion = SuitabilityCriterion(
+        score=None,
+        explanation="Unavailable: no verifiable cached AI assessment is present.",
+    )
     assessment = ResearchAssessment(
-        dataset_summary="Cached assessment for the verified UCI Student Performance dataset.",
+        dataset_summary="Verified cached profile for the UCI Student Performance dataset.",
         relevant_independent_variables=["studytime"],
         relevant_outcome_variables=["G3"],
         missing_or_unverified_research_variables=["Causal effect"],
-        why_useful=["Contains the documented studytime and G3 variables."],
+        why_useful=["Verified profile contains the documented studytime and G3 variables."],
         statistical_methodological_strengths=["649 observed records and complete values for the displayed variables."],
-        data_quality_issues=["Cached demo profile; inspect the live source before publication."],
+        data_quality_issues=["Cached profile; inspect the live source before publication."],
         population_limitations=["Observational student records do not establish causation."],
         sample_size_considerations=["Observed rows are not necessarily independent participants."],
         recommended_further_analyses=["Use an ordinal-aware association analysis."],
-        overall_assessment="Cached evidence suggests this dataset is a plausible starting point.",
+        overall_assessment="AI assessment unavailable. The verified statistical profile is available for review.",
         criteria=SuitabilityCriteria(
-            research_question_and_outcome_alignment=criterion,
-            required_variable_coverage=criterion,
-            sample_size_considerations=criterion,
-            data_quality_and_completeness=criterion,
-            documentation_and_provenance=criterion,
-            population_and_temporal_relevance=criterion,
+            research_question_and_outcome_alignment=unavailable_criterion,
+            required_variable_coverage=unavailable_criterion,
+            sample_size_considerations=unavailable_criterion,
+            data_quality_and_completeness=unavailable_criterion,
+            documentation_and_provenance=unavailable_criterion,
+            population_and_temporal_relevance=unavailable_criterion,
         ),
-        final_score=86,
-        score_explanation="Cached heuristic score from a previous verified assessment; not a probability or guarantee.",
+        final_score=None,
+        score_explanation="No verifiable cached AI assessment is available; no suitability score is reported.",
         ai_status="unavailable",
     )
     return DatasetAnalysisResponse(
@@ -185,7 +225,10 @@ def demo_analysis() -> DatasetAnalysisResponse:
         profile=profile,
         assessment=assessment,
         ai_assessment_status="unavailable",
-        warnings=["DEMO_MODE: showing cached verified statistics; no live Gemini call was made."],
+        warnings=[
+            "DEMO_MODE: showing cached verified Pandas statistics; no live Gemini call was made.",
+            "AI assessment unavailable: no authentic cached Gemini assessment is present.",
+        ],
     )
 
 

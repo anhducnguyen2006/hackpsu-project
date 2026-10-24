@@ -192,7 +192,12 @@ function DatasetCard({
                 }}
                 type="button"
               >
-                {exploring ? "Calculating..." : `Compare ${independent.name} with ${outcome.name}`}
+                {exploring
+                  ? "Calculating..."
+                  : independent.name === "studytime" && outcome.name === "G3" &&
+                      analysis.dataset.dataset_id === "uci:320"
+                    ? "Analyze study time vs. final grades"
+                    : `Analyze ${independent.name} vs. ${outcome.name}`}
               </button>
               {exploratory && <ExploratoryReport analysis={exploratory} />}
             </section>
@@ -204,25 +209,124 @@ function DatasetCard({
 }
 
 function ExploratoryReport({ analysis }: { analysis: ExploratoryAnalysisResponse }) {
-  const maxMean = Math.max(...analysis.categories.map((item) => item.mean_outcome ?? 0), 1);
+  const isStudentPerformance =
+    analysis.dataset_id === "uci:320" &&
+    analysis.independent_variable === "studytime" &&
+    analysis.outcome_variable === "G3";
+  const scaleMax = isStudentPerformance
+    ? 20
+    : Math.max(
+        1,
+        Math.ceil(
+          Math.max(...analysis.categories.map((item) => item.mean_outcome ?? 0), 1) / 5,
+        ) * 5,
+      );
+  const ticks = isStudentPerformance
+    ? [0, 5, 10, 15, 20]
+    : Array.from({ length: Math.min(5, scaleMax / 5 + 1) }, (_, index) => index * 5);
+  const chart = { width: 720, height: 360, left: 68, right: 20, top: 42, bottom: 78 };
+  const plotWidth = chart.width - chart.left - chart.right;
+  const plotHeight = chart.height - chart.top - chart.bottom;
+  const categoryLabels = isStudentPerformance
+    ? new Map([
+        [1, "<2 hours"],
+        [2, "2–5 hours"],
+        [3, "5–10 hours"],
+        [4, ">10 hours"],
+      ])
+    : new Map();
+  const label = (category: unknown) =>
+    categoryLabels.get(Number(category)) ?? String(category);
+  const formatNumber = (value: number | null) =>
+    value === null ? "—" : value.toFixed(2);
+  const barWidth = Math.min(74, plotWidth / Math.max(analysis.categories.length * 1.6, 1));
+  const xStep = plotWidth / Math.max(analysis.categories.length, 1);
   return (
     <div className="exploratory-report">
-      <p>
+      <h6>
+        {isStudentPerformance
+          ? "Average Final Grade by Weekly Study Time"
+          : `Average ${analysis.outcome_variable} by ${analysis.independent_variable}`}
+      </h6>
+      <p className="exploratory-summary">
         {analysis.analyzed_observation_count} observations included;{" "}
         {analysis.excluded_observation_count} excluded due to missing values.
       </p>
-      <div className="bar-chart" aria-label="Mean outcome by category">
+      <div className="chart-frame">
+        <svg
+          className="exploratory-chart"
+          viewBox={`0 0 ${chart.width} ${chart.height}`}
+          role="img"
+          aria-label="Average final grade by weekly study time"
+        >
+          {ticks.map((tick) => {
+            const y = chart.top + plotHeight - (tick / scaleMax) * plotHeight;
+            return (
+              <g key={tick}>
+                <line
+                  className="chart-gridline"
+                  x1={chart.left}
+                  x2={chart.width - chart.right}
+                  y1={y}
+                  y2={y}
+                />
+                <text className="chart-tick" x={chart.left - 10} y={y + 4} textAnchor="end">
+                  {tick}
+                </text>
+              </g>
+            );
+          })}
+          <text
+            className="chart-axis-label"
+            transform={`translate(16 ${chart.top + plotHeight / 2}) rotate(-90)`}
+            textAnchor="middle"
+          >
+            {isStudentPerformance ? "Mean final grade (0–20)" : "Mean outcome"}
+          </text>
+          <text
+            className="chart-axis-label"
+            x={chart.left + plotWidth / 2}
+            y={chart.height - 10}
+            textAnchor="middle"
+          >
+            {isStudentPerformance ? "Weekly study time" : "Category"}
+          </text>
+          {analysis.categories.map((item, index) => {
+            const mean = item.mean_outcome ?? 0;
+            const height = (mean / scaleMax) * plotHeight;
+            const x = chart.left + xStep * index + (xStep - barWidth) / 2;
+            const y = chart.top + plotHeight - height;
+            return (
+              <g key={String(item.category)}>
+                <rect
+                  className="chart-bar"
+                  x={x}
+                  y={y}
+                  width={barWidth}
+                  height={height}
+                  rx={6}
+                  aria-label={`${label(item.category)} mean ${formatNumber(item.mean_outcome)}, n = ${item.observations}`}
+                />
+                <text className="chart-value" x={x + barWidth / 2} y={Math.max(y - 8, chart.top + 12)} textAnchor="middle">
+                  {formatNumber(item.mean_outcome)}
+                </text>
+                <text className="chart-category" x={x + barWidth / 2} y={chart.top + plotHeight + 22} textAnchor="middle">
+                  {label(item.category)}
+                </text>
+                <text className="chart-count" x={x + barWidth / 2} y={chart.top + plotHeight + 40} textAnchor="middle">
+                  n = {item.observations}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      <div className="chart-stats" aria-label="Exploratory summary values">
         {analysis.categories.map((item) => (
-          <div className="bar-group" key={String(item.category)}>
-            <div
-              className="bar"
-              style={{ height: `${Math.max(((item.mean_outcome ?? 0) / maxMean) * 100, 4)}%` }}
-              title={`Mean: ${item.mean_outcome ?? "Unavailable"}`}
-            />
-            <strong>{String(item.category)}</strong>
-            <span>{item.mean_outcome ?? "—"} mean</span>
-            <span>n={item.observations}</span>
-          </div>
+          <span key={String(item.category)}>
+            <strong>{label(item.category)}</strong>: mean {formatNumber(item.mean_outcome)};{" "}
+            median {formatNumber(item.median_outcome)}; SD {formatNumber(item.standard_deviation)}
+          </span>
         ))}
       </div>
       <ul>
@@ -234,6 +338,7 @@ function ExploratoryReport({ analysis }: { analysis: ExploratoryAnalysisResponse
 
 function AnalysisReport({ analysis }: { analysis: DatasetAnalysisResponse }) {
   const [showAllColumns, setShowAllColumns] = useState(false);
+  const isCachedDemo = analysis.warnings.some((warning) => warning.startsWith("DEMO_MODE:"));
   const columns = [...analysis.profile!.columns].sort((left, right) => {
     const roleRank = (column: typeof left) =>
       column.research_roles.includes("outcome")
@@ -262,21 +367,29 @@ function AnalysisReport({ analysis }: { analysis: DatasetAnalysisResponse }) {
           <p className="report-label">
             {analysis.ai_assessment_status === "available"
               ? "AI assessment based on verified metadata and computed statistics"
-              : "Statistical profile available; AI assessment unavailable"}
+              : isCachedDemo
+                ? "Cached verified statistics; AI assessment unavailable"
+                : "Verified statistical profile available; AI assessment unavailable"}
           </p>
           <p><strong>Profile:</strong> {analysis.profile.row_count} observed records, {analysis.profile.column_count} columns, {analysis.profile.duplicate_row_count} duplicate rows. Observed records are not necessarily independent participants.</p>
           {analysis.assessment && (
             <>
               <p>{analysis.assessment.overall_assessment}</p>
-              <h5>Score breakdown</h5>
-              <ul>
-                {Object.entries(analysis.assessment.criteria).map(([name, criterion]) => (
-                  <li key={name}>
-                    <strong>{name.replace(/_/g, " ")}:</strong>{" "}
-                    {criterion.score === null ? "Unknown" : `${criterion.score}/100`} — {criterion.explanation}
-                  </li>
-                ))}
-              </ul>
+              {analysis.ai_assessment_status === "available" ? (
+                <>
+                  <h5>Score breakdown</h5>
+                  <ul>
+                    {Object.entries(analysis.assessment.criteria).map(([name, criterion]) => (
+                      <li key={name}>
+                        <strong>{name.replace(/_/g, " ")}:</strong>{" "}
+                        {criterion.score === null ? "Unknown" : `${criterion.score}/100`} — {criterion.explanation}
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p className="report-label">AI criterion scores are unavailable and are not reported.</p>
+              )}
               <h5>Limitations and next analyses</h5>
               <ul>
                 {[...analysis.assessment.data_quality_issues, ...analysis.assessment.population_limitations, ...analysis.assessment.recommended_further_analyses].map((item) => (
@@ -286,17 +399,21 @@ function AnalysisReport({ analysis }: { analysis: DatasetAnalysisResponse }) {
               <p className="score-explanation">{analysis.assessment.score_explanation}</p>
             </>
           )}
-          <h5>Research-variable evidence</h5>
-          <ul>
-            {analysis.profile.research_variable_evidence.map((item) => (
-              <li key={item.research_variable}>
-                <strong>{item.research_variable}:</strong>{" "}
-                {item.matched_columns.length ? item.matched_columns.join(", ") : "no verified matching column"};{" "}
-                {item.usable_observations} usable observations.
-                {item.notes.length ? ` ${item.notes.join(" ")}` : ""}
-              </li>
-            ))}
-          </ul>
+          {analysis.profile.research_variable_evidence.length > 0 && (
+            <>
+              <h5>Research-variable evidence</h5>
+              <ul>
+                {analysis.profile.research_variable_evidence.map((item) => (
+                  <li key={item.research_variable}>
+                    <strong>{item.research_variable}:</strong>{" "}
+                    {item.matched_columns.length ? item.matched_columns.join(", ") : "no verified matching column"};{" "}
+                    {item.usable_observations} usable observations.
+                    {item.notes.length ? ` ${item.notes.join(" ")}` : ""}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           <h5>Statistics</h5>
           <p className="report-label">
             Relevant outcome and independent variables are shown first. Ordinal or encoded numeric variables show category frequencies; their means are not interpreted as exact units.
@@ -386,7 +503,7 @@ function ComparisonView({
                   : ["Analyze this dataset to compute statistics and assess limitations."]
                 ).map((item) => <li key={item}>{item}</li>)}
               </ul>
-              {assessment && (
+              {assessment?.ai_status === "available" ? (
                 <>
                   <h5>Scoring criteria</h5>
                   <ul>
@@ -395,7 +512,9 @@ function ComparisonView({
                     ))}
                   </ul>
                 </>
-              )}
+              ) : assessment ? (
+                <p className="report-label">AI assessment unavailable; criterion scores are not reported.</p>
+              ) : null}
             </article>
           );
         })}
