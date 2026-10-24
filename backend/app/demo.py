@@ -33,15 +33,30 @@ DEMO_320 = UCIRecord(
     data_available=True,
 )
 
-DEMO_45 = UCIRecord(
-    dataset_id="uci:45",
-    title="Heart Disease",
-    description="Heart disease diagnosis dataset.",
-    repository_url="https://archive.ics.uci.edu/dataset/45/heart+disease",
-    subject_area="Health and Medicine",
-    variables=["age", "chol", "num"],
-    instance_count=303,
-    feature_count=13,
+DEMO_856 = UCIRecord(
+    dataset_id="uci:856",
+    title="Higher Education Students Performance Evaluation",
+    description=(
+        "The data was collected from Faculty of Engineering and Faculty of "
+        "Educational Sciences students in 2019 to predict end-of-term performance."
+    ),
+    repository_url=(
+        "https://archive.ics.uci.edu/dataset/856/"
+        "higher+education+students+performance+evaluation"
+    ),
+    subject_area="Social Science",
+    variables=[
+        "Student Age",
+        "Weekly study hours",
+        "Cumulative grade point average in the last semester (/4.00)",
+        "OUTPUT Grade",
+    ],
+    variable_descriptions={
+        "Weekly study hours": "1: None, 2: <5 hours, 3: 6-10 hours, 4: 11-20 hours, 5: more than 20 hours",
+        "OUTPUT Grade": "0: Fail, 1: DD, 2: DC, 3: CC, 4: CB, 5: BB, 6: BA, 7: AA",
+    },
+    instance_count=145,
+    feature_count=31,
     data_available=True,
 )
 
@@ -79,13 +94,16 @@ def demo_search(
             classification="relevant",
         ),
         DatasetResult(
-            **DEMO_45.model_dump(),
+            **DEMO_856.model_dump(),
             data_status="available",
-            preliminary_relevance_score=18,
-            relevance_explanation="Cached verified UCI metadata is shown as a comparison candidate, not as a direct match.",
+            preliminary_relevance_score=48,
+            relevance_explanation=(
+                "Cached verified UCI metadata shows an education-performance "
+                "comparison candidate with documented weekly study-hour and grade variables."
+            ),
             score_confidence="low",
-            matched_research_variables=[],
-            missing_or_unverified_variables=["study time", "academic performance"],
+            matched_research_variables=["Weekly study hours", "OUTPUT Grade"],
+            missing_or_unverified_variables=["Directly comparable study-time coding", "Causal effect"],
             classification="partially_relevant",
         ),
     ]

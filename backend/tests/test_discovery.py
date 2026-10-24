@@ -121,8 +121,39 @@ def test_discovery_cache_avoids_repeating_repository_work() -> None:
 def test_demo_search_is_labeled_and_does_not_match_unrelated_questions() -> None:
     _, datasets, warnings, _ = demo_search("Does study time affect academic performance?")
     assert datasets[0].dataset_id == "uci:320"
+    assert datasets[1].dataset_id == "uci:856"
+    assert datasets[1].instance_count == 145
     assert any("DEMO_MODE" in warning for warning in warnings)
 
     _, unrelated, warnings, _ = demo_search("What is quantum unicorn rainfall on Mars?")
     assert unrelated == []
     assert any("No cached demo result" in warning for warning in warnings)
+
+
+def test_reranking_is_bounded_to_twelve_candidates() -> None:
+    class CountingGemini(FakeGemini):
+        def rerank(self, question, interpretation, candidates):
+            assert len(candidates) == 12
+            return RelevanceAssessmentBatch(assessments=[])
+
+    records = [
+        UCIRecord(
+            dataset_id=f"uci:{index}",
+            title=f"Student performance {index}",
+            description="study grades student performance",
+            repository_url=f"https://archive.ics.uci.edu/dataset/{index}",
+            variables=["studytime", "G3"],
+        )
+        for index in range(1, 15)
+    ]
+
+    class ManyRepository(FakeRepository):
+        def discover_catalog(self):
+            return records
+
+        def get_metadata(self, dataset_id: int):
+            return records[dataset_id - 1]
+
+    DiscoveryService(ManyRepository(), CountingGemini()).search(
+        "Does study time affect grades?", 8
+    )

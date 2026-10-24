@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from app.api.schemas import (
@@ -12,9 +13,32 @@ from app.api.schemas import (
 )
 from app.config import settings
 
+logger = logging.getLogger(__name__)
 
 class GeminiUnavailableError(RuntimeError):
     """Raised when Gemini cannot be used for a request."""
+
+
+def _failure_label(error: Exception) -> str:
+    text = str(error).lower()
+    if "429" in text or "resource_exhausted" in text or "quota" in text:
+        return "quota/rate limit (not retried)"
+    if "404" in text or "not found" in text or "not_found" in text:
+        return "model unavailable"
+    if "503" in text or "unavailable" in text:
+        return "temporary service unavailability"
+    if "504" in text or "deadline" in text or "timed out" in text or "timeout" in text:
+        return "request timeout"
+    return "request failure"
+
+
+def _config(types: Any, schema: Any, *, max_output_tokens: int) -> Any:
+    return types.GenerateContentConfig(
+        response_mime_type="application/json",
+        response_schema=schema,
+        max_output_tokens=max_output_tokens,
+        thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW),
+    )
 
 
 class GeminiService:
@@ -41,8 +65,13 @@ class GeminiService:
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=ResearchInterpretation,
-                ),
+                    max_output_tokens=700,
+                    thinking_config=types.ThinkingConfig(
+                        thinking_level=types.ThinkingLevel.LOW
+                    ),
+                )
             )
+            self._log_usage(response, "interpretation")
             parsed = getattr(response, "parsed", None)
             if parsed is not None:
                 return ResearchInterpretation.model_validate(parsed)
@@ -53,7 +82,9 @@ class GeminiService:
         except GeminiUnavailableError:
             raise
         except Exception as error:
-            raise GeminiUnavailableError(f"Gemini interpretation failed: {error}") from error
+            raise GeminiUnavailableError(
+                f"Gemini interpretation failed ({_failure_label(error)}): {error}"
+            ) from error
 
     def rerank(
         self,
@@ -74,7 +105,7 @@ class GeminiService:
                 "feature_count": candidate.feature_count,
                 "data_available": candidate.data_available,
             }
-            for candidate in candidates
+            for candidate in candidates[:12]
         ]
         prompt = (
             "Assess preliminary research relevance using ONLY the verified candidate "
@@ -96,11 +127,11 @@ class GeminiService:
             response = client.models.generate_content(
                 model=settings.gemini_model,
                 contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=RelevanceAssessmentBatch,
+                config=_config(
+                    types, RelevanceAssessmentBatch, max_output_tokens=1400
                 ),
             )
+            self._log_usage(response, "reranking")
             parsed = getattr(response, "parsed", None)
             if parsed is not None:
                 return RelevanceAssessmentBatch.model_validate(parsed)
@@ -109,7 +140,9 @@ class GeminiService:
                 raise ValueError("Gemini returned an empty reranking response.")
             return RelevanceAssessmentBatch.model_validate(json.loads(text))
         except Exception as error:
-            raise GeminiUnavailableError(f"Gemini reranking failed: {error}") from error
+            raise GeminiUnavailableError(
+                f"Gemini reranking failed ({_failure_label(error)}): {error}"
+            ) from error
 
     def assess_suitability(
         self,
@@ -146,8 +179,10 @@ class GeminiService:
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=ResearchAssessment,
+                    max_output_tokens=2200,
                 ),
             )
+            self._log_usage(response, "suitability")
             parsed = getattr(response, "parsed", None)
             if parsed is not None:
                 return ResearchAssessment.model_validate(parsed)
@@ -156,7 +191,9 @@ class GeminiService:
                 raise ValueError("Gemini returned an empty suitability response.")
             return ResearchAssessment.model_validate(json.loads(text))
         except Exception as error:
-            raise GeminiUnavailableError(f"Gemini suitability assessment failed: {error}") from error
+            raise GeminiUnavailableError(
+                f"Gemini suitability assessment failed ({_failure_label(error)}): {error}"
+            ) from error
 
     def _create_client(self) -> Any:
         try:
@@ -173,8 +210,21 @@ class GeminiService:
                     attempts=2,
                     initialDelay=1,
                     maxDelay=4,
-                    httpStatusCodes=[408, 429, 500, 502, 503, 504],
+                    httpStatusCodes=[408, 500, 502, 503, 504],
                 ),
                 timeout=settings.gemini_request_timeout_ms,
             ),
+        )
+
+    @staticmethod
+    def _log_usage(response: Any, operation: str) -> None:
+        usage = getattr(response, "usage_metadata", None)
+        if usage is None:
+            return
+        logger.info(
+            "gemini operation=%s prompt_tokens=%s output_tokens=%s total_tokens=%s",
+            operation,
+            getattr(usage, "prompt_token_count", None),
+            getattr(usage, "candidates_token_count", None),
+            getattr(usage, "total_token_count", None),
         )

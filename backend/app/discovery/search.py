@@ -40,7 +40,7 @@ class DiscoveryService:
         started = time.perf_counter()
         cache_key = (question.strip().lower(), limit)
         cached = self._cache.get(cache_key)
-        if cached and time.monotonic() - cached[0] < self.cache_ttl_seconds:
+        if cached and time.monotonic() - cached[0] < self._cache_ttl(cached[1]):
             logger.info("discovery stage=cache_hit elapsed_ms=%.1f", (time.perf_counter() - started) * 1000)
             return cached[1]
         warnings: list[str] = []
@@ -72,7 +72,7 @@ class DiscoveryService:
         logger.info("discovery stage=catalog elapsed_ms=%.1f records=%d", (time.perf_counter() - stage_started) * 1000, len(catalog))
 
         stage_started = time.perf_counter()
-        candidates = self._rank_catalog(catalog, interpretation, 30)
+        candidates = self._rank_catalog(catalog, interpretation, 12)
         logger.info("discovery stage=filter elapsed_ms=%.1f candidates=%d", (time.perf_counter() - stage_started) * 1000, len(candidates))
         stage_started = time.perf_counter()
         enriched = self._enrich(candidates, warnings)
@@ -145,6 +145,10 @@ class DiscoveryService:
                         f"Could not enrich {candidate.dataset_id}: {self._safe_error(error)}"
                     )
         return enriched
+
+    @staticmethod
+    def _cache_ttl(response: tuple) -> int:
+        return 300 if response[3] == "gemini" else 30
 
     @staticmethod
     def _rank_catalog(

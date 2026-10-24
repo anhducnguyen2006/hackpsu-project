@@ -7,7 +7,8 @@ import type {
 } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
-const REQUEST_TIMEOUT_MS = 45_000;
+// Two bounded Gemini attempts can take up to roughly 34s per call, plus UCI I/O.
+const REQUEST_TIMEOUT_MS = 90_000;
 
 async function fetchWithTimeout(
   input: RequestInfo | URL,
