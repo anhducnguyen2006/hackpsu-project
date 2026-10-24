@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import re
+import logging
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Iterable
 
 from app.api.schemas import (
@@ -11,6 +14,7 @@ from app.api.schemas import (
 )
 from app.assessment.gemini import GeminiService
 
+logger = logging.getLogger(__name__)
 
 GENERIC_TERMS = {
     "analysis", "attribute", "attributes", "data", "dataset", "health", "patient",
@@ -27,12 +31,21 @@ class DiscoveryService:
     def __init__(self, repository, gemini: GeminiService) -> None:
         self.repository = repository
         self.gemini = gemini
+        self._cache: dict[tuple[str, int], tuple[float, tuple]] = {}
+        self.cache_ttl_seconds = 300
 
     def search(
         self, question: str, limit: int
     ) -> tuple[ResearchInterpretation | None, list[DatasetResult], list[str], str]:
+        started = time.perf_counter()
+        cache_key = (question.strip().lower(), limit)
+        cached = self._cache.get(cache_key)
+        if cached and time.monotonic() - cached[0] < self.cache_ttl_seconds:
+            logger.info("discovery stage=cache_hit elapsed_ms=%.1f", (time.perf_counter() - started) * 1000)
+            return cached[1]
         warnings: list[str] = []
         interpretation_failed = False
+        stage_started = time.perf_counter()
         try:
             interpretation = self.gemini.interpret(question)
         except Exception as error:
@@ -41,28 +54,45 @@ class DiscoveryService:
             warnings.append(
                 f"Gemini unavailable; used metadata keyword fallback: {self._safe_error(error)}"
             )
+        logger.info("discovery stage=interpretation elapsed_ms=%.1f", (time.perf_counter() - stage_started) * 1000)
 
+        stage_started = time.perf_counter()
         try:
             catalog = self.repository.discover_catalog()
         except Exception as error:
-            return (
+            response = (
                 interpretation,
                 [],
                 [f"UCI repository unavailable: {self._safe_error(error)}"],
                 "keyword_fallback" if interpretation_failed else "partial_gemini",
             )
+            self._cache[cache_key] = (time.monotonic(), response)
+            logger.info("discovery stage=response_repository_failure elapsed_ms=%.1f", (time.perf_counter() - started) * 1000)
+            return response
+        logger.info("discovery stage=catalog elapsed_ms=%.1f records=%d", (time.perf_counter() - stage_started) * 1000, len(catalog))
 
+        stage_started = time.perf_counter()
         candidates = self._rank_catalog(catalog, interpretation, 30)
+        logger.info("discovery stage=filter elapsed_ms=%.1f candidates=%d", (time.perf_counter() - stage_started) * 1000, len(candidates))
+        stage_started = time.perf_counter()
         enriched = self._enrich(candidates, warnings)
+        logger.info("discovery stage=enrichment elapsed_ms=%.1f enriched=%d", (time.perf_counter() - stage_started) * 1000, len(enriched))
         if not enriched:
-            return interpretation, [], warnings, "keyword_fallback" if interpretation_failed else "partial_gemini"
+            response = (interpretation, [], warnings, "keyword_fallback" if interpretation_failed else "partial_gemini")
+            self._cache[cache_key] = (time.monotonic(), response)
+            return response
 
         if interpretation_failed:
             results = self._fallback_results(enriched, interpretation)
-            return interpretation, results[:limit], warnings, "keyword_fallback"
+            response = (interpretation, results[:limit], warnings, "keyword_fallback")
+            self._cache[cache_key] = (time.monotonic(), response)
+            logger.info("discovery stage=response_keyword elapsed_ms=%.1f", (time.perf_counter() - started) * 1000)
+            return response
 
         try:
+            stage_started = time.perf_counter()
             batch = self.gemini.rerank(question, interpretation, enriched)
+            logger.info("discovery stage=reranking elapsed_ms=%.1f", (time.perf_counter() - stage_started) * 1000)
             candidate_ids = {candidate.dataset_id for candidate in enriched}
             assessments = {
                 assessment.dataset_id: assessment
@@ -80,30 +110,40 @@ class DiscoveryService:
                 if item.preliminary_relevance_score is not None else -1,
                 reverse=True,
             )
-            return interpretation, results[:limit], warnings, "gemini"
+            response = (interpretation, results[:limit], warnings, "gemini")
+            self._cache[cache_key] = (time.monotonic(), response)
+            logger.info("discovery stage=response elapsed_ms=%.1f", (time.perf_counter() - started) * 1000)
+            return response
         except Exception as error:
             warnings.append(
                 f"Gemini reranking unavailable; used metadata keyword fallback: "
                 f"{self._safe_error(error)}"
             )
-            return (
+            response = (
                 interpretation,
                 self._fallback_results(enriched, interpretation)[:limit],
                 warnings,
                 "partial_gemini",
             )
+            self._cache[cache_key] = (time.monotonic(), response)
+            logger.info("discovery stage=response_fallback elapsed_ms=%.1f", (time.perf_counter() - started) * 1000)
+            return response
 
     def _enrich(self, candidates: list[UCIRecord], warnings: list[str]) -> list[UCIRecord]:
         enriched = []
-        for candidate in candidates:
-            try:
-                enriched.append(
-                    self.repository.get_metadata(int(candidate.dataset_id.split(":")[1]))
-                )
-            except Exception as error:
-                warnings.append(
-                    f"Could not enrich {candidate.dataset_id}: {self._safe_error(error)}"
-                )
+        def enrich_one(candidate: UCIRecord) -> UCIRecord:
+            return self.repository.get_metadata(int(candidate.dataset_id.split(":")[1]))
+
+        with ThreadPoolExecutor(max_workers=min(8, max(1, len(candidates)))) as executor:
+            futures = {executor.submit(enrich_one, candidate): candidate for candidate in candidates}
+            for future in as_completed(futures):
+                candidate = futures[future]
+                try:
+                    enriched.append(future.result())
+                except Exception as error:
+                    warnings.append(
+                        f"Could not enrich {candidate.dataset_id}: {self._safe_error(error)}"
+                    )
         return enriched
 
     @staticmethod
@@ -229,4 +269,6 @@ class DiscoveryService:
     @staticmethod
     def _safe_error(error: Exception) -> str:
         message = str(error)
-        return re.sub(r"(AIza|AQ\.)[A-Za-z0-9_-]+", "[redacted]", message)
+        message = message.split("{", 1)[0].strip()
+        message = re.sub(r"(AIza|AQ\.)[A-Za-z0-9_-]+", "[redacted]", message)
+        return message[:300]

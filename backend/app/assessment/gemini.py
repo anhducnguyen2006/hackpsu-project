@@ -174,6 +174,7 @@ class GeminiService:
                     initialDelay=1,
                     maxDelay=4,
                     httpStatusCodes=[408, 429, 500, 502, 503, 504],
-                )
+                ),
+                timeout=settings.gemini_request_timeout_ms,
             ),
         )

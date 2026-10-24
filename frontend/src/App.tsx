@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import type {
   DatasetAnalysisResponse,
   DatasetCardData,
@@ -7,12 +7,31 @@ import type {
 } from "./types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const REQUEST_TIMEOUT_MS = 45_000;
 
-async function searchDatasets(question: string): Promise<DiscoveryResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/discovery/search`, {
+async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  init.signal?.addEventListener("abort", abort, { once: true });
+  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timeout);
+    init.signal?.removeEventListener("abort", abort);
+  }
+}
+
+async function searchDatasets(question: string, signal?: AbortSignal): Promise<DiscoveryResponse> {
+  const response = await fetchWithTimeout(`${API_BASE_URL}/api/v1/discovery/search`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ research_question: question, limit: 8 }),
+    signal,
   });
   if (!response.ok) {
     const detail = await response.json().catch(() => null);
@@ -25,7 +44,7 @@ async function analyzeDataset(
   datasetId: string,
   question: string,
 ): Promise<DatasetAnalysisResponse> {
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `${API_BASE_URL}/api/v1/datasets/${encodeURIComponent(datasetId)}/analyze`,
     {
       method: "POST",
@@ -38,30 +57,6 @@ async function analyzeDataset(
     throw new Error(detail?.detail ?? `Analysis failed (${response.status}).`);
   }
 
-  async function exploreDataset(
-    datasetId: string,
-    question: string,
-    independentVariable: string,
-    outcomeVariable: string,
-  ): Promise<ExploratoryAnalysisResponse> {
-    const response = await fetch(
-      `${API_BASE_URL}/api/v1/datasets/${encodeURIComponent(datasetId)}/explore`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          research_question: question,
-          independent_variable: independentVariable,
-          outcome_variable: outcomeVariable,
-        }),
-      },
-    );
-    if (!response.ok) {
-      const detail = await response.json().catch(() => null);
-      throw new Error(detail?.detail ?? `Exploratory analysis failed (${response.status}).`);
-    }
-    return response.json() as Promise<ExploratoryAnalysisResponse>;
-  }
   return response.json() as Promise<DatasetAnalysisResponse>;
 }
 
@@ -71,7 +66,7 @@ async function exploreDataset(
   independentVariable: string,
   outcomeVariable: string,
 ): Promise<ExploratoryAnalysisResponse> {
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `${API_BASE_URL}/api/v1/datasets/${encodeURIComponent(datasetId)}/explore`,
     {
       method: "POST",
@@ -424,9 +419,15 @@ function App() {
   const [exploring, setExploring] = useState<string | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [compareOpen, setCompareOpen] = useState(false);
+  const searchSequence = useRef(0);
+  const activeSearch = useRef<AbortController | null>(null);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
+    const sequence = ++searchSequence.current;
+    activeSearch.current?.abort();
+    const controller = new AbortController();
+    activeSearch.current = controller;
     setError(null);
     setResult(null);
     setExpanded(null);
@@ -436,13 +437,20 @@ function App() {
     setCompareOpen(false);
     setLoading(true);
     try {
-      setResult(await searchDatasets(question));
+      const nextResult = await searchDatasets(question, controller.signal);
+      if (sequence === searchSequence.current) {
+        setResult(nextResult);
+      }
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Search failed.");
+      if (sequence !== searchSequence.current) return;
+      setError(
+        requestError instanceof DOMException && requestError.name === "AbortError"
+          ? "Search timed out or was cancelled. Please retry."
+          : requestError instanceof Error ? requestError.message : "Search failed.",
+      );
     } finally {
-      setLoading(false);
+      if (sequence === searchSequence.current) setLoading(false);
     }
-
   }
 
   async function handleAnalyze(dataset: DatasetCardData) {
@@ -496,7 +504,7 @@ function App() {
           Find real datasets and understand whether they can support your research question.
         </p>
       </header>
-      <form className="search-panel" onSubmit={handleSubmit}>
+      <form className="search-panel" id="research-search" onSubmit={handleSubmit}>
         <label htmlFor="research-question">Research question</label>
         <div className="search-row">
           <input
@@ -518,7 +526,12 @@ function App() {
           <span className="status-pill">Verified UCI source</span>
         </div>
         {loading && <p className="empty-state">Interpreting your question and searching UCI...</p>}
-        {error && <p className="error-state">{error}</p>}
+        {error && (
+          <div className="error-state">
+            <p>{error}</p>
+            <button type="submit" form="research-search">Retry search</button>
+          </div>
+        )}
         {!loading && !error && !result && (
           <p className="empty-state">Enter a research question to see verified dataset results.</p>
         )}

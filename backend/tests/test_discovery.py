@@ -1,5 +1,6 @@
 from app.api.schemas import RelevanceAssessmentBatch, ResearchInterpretation, UCIRecord
 from app.discovery.search import DiscoveryService
+from app.demo import demo_search
 
 
 class FakeGemini:
@@ -106,3 +107,22 @@ def test_repository_failure_returns_empty_results() -> None:
     assert datasets == []
     assert "UCI repository unavailable" in warnings[0]
     assert mode == "partial_gemini"
+
+
+def test_discovery_cache_avoids_repeating_repository_work() -> None:
+    repository = FakeRepository()
+    service = DiscoveryService(repository, FakeGemini())
+    service.search("Does study time affect grades?", 8)
+    first_call_count = repository.catalog_calls
+    service.search("Does study time affect grades?", 8)
+    assert repository.catalog_calls == first_call_count
+
+
+def test_demo_search_is_labeled_and_does_not_match_unrelated_questions() -> None:
+    _, datasets, warnings, _ = demo_search("Does study time affect academic performance?")
+    assert datasets[0].dataset_id == "uci:320"
+    assert any("DEMO_MODE" in warning for warning in warnings)
+
+    _, unrelated, warnings, _ = demo_search("What is quantum unicorn rainfall on Mars?")
+    assert unrelated == []
+    assert any("No cached demo result" in warning for warning in warnings)

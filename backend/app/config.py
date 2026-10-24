@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-2.5-flash"
     backend_cors_origins: str = "http://localhost:5173"
     uci_catalog_ttl_seconds: int = 900
+    external_request_timeout_seconds: float = 12.0
+    gemini_request_timeout_ms: int = 15000
+    demo_mode: bool = False
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[1] / ".env",

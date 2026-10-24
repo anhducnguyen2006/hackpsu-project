@@ -23,7 +23,7 @@ class UCIRepositoryService:
     source = "UCI Machine Learning Repository"
 
     def __init__(self, client: httpx.Client | None = None, catalog_ttl: int = 900) -> None:
-        self.client = client or httpx.Client(timeout=20)
+        self.client = client or httpx.Client(timeout=12)
         self.catalog_ttl = catalog_ttl
         self._catalog: list[UCIRecord] | None = None
         self._catalog_loaded_at = 0.0

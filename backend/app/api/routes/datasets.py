@@ -9,6 +9,7 @@ from app.api.schemas import (
 from app.analysis.service import DatasetAnalysisService
 from app.assessment.gemini import GeminiService
 from app.config import settings
+from app.demo import demo_analysis, demo_exploration
 from app.discovery.uci import UCIRepositoryError, UCIRepositoryService
 
 router = APIRouter(prefix="/dev", tags=["development"])
@@ -32,6 +33,8 @@ analysis_router = APIRouter(prefix="/datasets", tags=["datasets"])
 def analyze_dataset(
     dataset_id: str, request: AnalysisRequest
 ) -> DatasetAnalysisResponse:
+    if settings.demo_mode and dataset_id == "uci:320":
+        return demo_analysis()
     try:
         return analysis_service.analyze(dataset_id, request)
     except ValueError as error:
@@ -46,6 +49,13 @@ def analyze_dataset(
 def explore_dataset(
     dataset_id: str, request: ExploreRequest
 ) -> ExploratoryAnalysisResponse:
+    if settings.demo_mode and dataset_id == "uci:320":
+        if request.independent_variable != "studytime" or request.outcome_variable != "G3":
+            raise HTTPException(
+                status_code=400,
+                detail="DEMO_MODE supports the cached studytime versus G3 analysis only.",
+            )
+        return demo_exploration()
     try:
         return analysis_service.explore(dataset_id, request)
     except ValueError as error:
