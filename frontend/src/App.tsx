@@ -118,7 +118,7 @@ function DatasetCard({
     column.research_roles.includes("outcome"),
   );
   return (
-    <article className="dataset-card" onClick={onToggle}>
+    <article className="dataset-card">
       <div className="card-content">
         <label className="compare-control" onClick={(event) => event.stopPropagation()}>
           <input
@@ -147,12 +147,17 @@ function DatasetCard({
           event.stopPropagation();
           onToggle();
         }}
+        aria-expanded={expanded}
+        aria-controls={`details-${dataset.dataset_id.replace(/[^a-zA-Z0-9_-]/g, "-")}`}
         type="button"
       >
         {expanded ? "Hide details" : "Details"}
       </button>
       {expanded && (
-        <div className="details-panel">
+        <div
+          className="details-panel"
+          id={`details-${dataset.dataset_id.replace(/[^a-zA-Z0-9_-]/g, "-")}`}
+        >
           <p>{dataset.relevance_explanation}</p>
           <dl className="metadata-list">
             <div><dt>Dataset ID</dt><dd>{dataset.dataset_id}</dd></div>
