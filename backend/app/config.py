@@ -33,9 +33,14 @@ class Settings(BaseSettings):
             parsed = json.loads(self.backend_cors_origins)
         except json.JSONDecodeError:
             parsed = [origin.strip() for origin in self.backend_cors_origins.split(",")]
-        if isinstance(parsed, str):
-            return [parsed]
-        return [str(origin) for origin in parsed]
+        origins = [parsed] if isinstance(parsed, str) else [str(origin) for origin in parsed]
+        local_aliases = {
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        }
+        if any(origin in local_aliases for origin in origins):
+            origins.extend(local_aliases)
+        return list(dict.fromkeys(origins))
 
 
 settings = Settings()

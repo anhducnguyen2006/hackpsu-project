@@ -19,4 +19,5 @@ app.add_middleware(
 
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(datasets.router, prefix="/api/v1")
+app.include_router(datasets.analysis_router, prefix="/api/v1")
 app.include_router(discovery.router, prefix="/api/v1")

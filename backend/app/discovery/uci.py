@@ -67,6 +67,26 @@ class UCIRepositoryService:
             ) from error
 
     def fetch_and_profile(self, dataset_id: int) -> dict[str, Any]:
+        record, dataframe, metadata = self.fetch_dataset(dataset_id)
+        return {
+            **record.model_dump(mode="json"),
+            "data_status": "analyzed",
+            "metadata": self._json_safe(metadata),
+            "profile": self._profile(dataframe),
+        }
+
+    def fetch_dataset(self, dataset_id: int) -> tuple[UCIRecord, pd.DataFrame, dict[str, Any]]:
+        metadata_record = self.get_metadata(dataset_id)
+        if (
+            metadata_record.instance_count is not None
+            and metadata_record.instance_count > 100_000
+        ) or (
+            metadata_record.feature_count is not None
+            and metadata_record.feature_count > 500
+        ):
+            raise UCIRepositoryError(
+                f"UCI dataset {dataset_id} exceeds supported metadata size limits."
+            )
         try:
             repository_dataset = fetch_ucirepo(id=dataset_id)
             metadata = self._metadata(repository_dataset)
@@ -78,12 +98,11 @@ class UCIRepositoryService:
                 f"Unable to fetch UCI dataset {dataset_id}: {error}"
             ) from error
         record = self._record_from_metadata(metadata)
-        return {
-            **record.model_dump(mode="json"),
-            "data_status": "analyzed",
-            "metadata": self._json_safe(metadata),
-            "profile": self._profile(dataframe),
-        }
+        if len(dataframe) > 100_000 or len(dataframe.columns) > 500:
+            raise UCIRepositoryError(
+                f"UCI dataset {dataset_id} exceeds the supported tabular size limits."
+            )
+        return record, dataframe, metadata
 
     @classmethod
     def _record_from_catalog(cls, item: dict[str, Any]) -> UCIRecord:
@@ -104,6 +123,13 @@ class UCIRepositoryService:
             for variable in variables
             if isinstance(variable, dict) and variable.get("name")
         ]
+        descriptions = {
+            str(variable["name"]): str(variable.get("description", ""))
+            for variable in variables
+            if isinstance(variable, dict)
+            and variable.get("name")
+            and variable.get("description")
+        }
         return UCIRecord(
             dataset_id=f"uci:{dataset_id}",
             title=str(metadata.get("name", f"UCI dataset {dataset_id}")),
@@ -114,6 +140,7 @@ class UCIRepositoryService:
             ),
             subject_area=metadata.get("area"),
             variables=variable_names,
+            variable_descriptions=descriptions,
             instance_count=metadata.get("num_instances"),
             feature_count=metadata.get("num_features"),
             data_available=bool(metadata.get("data_url")),

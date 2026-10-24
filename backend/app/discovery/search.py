@@ -15,6 +15,7 @@ from app.assessment.gemini import GeminiService
 GENERIC_TERMS = {
     "analysis", "attribute", "attributes", "data", "dataset", "health", "patient",
     "performance", "prediction", "predict", "study", "variable",
+    "consumption", "quality", "effect", "affect",
 }
 STOP_WORDS = {
     "can", "does", "the", "and", "are", "between", "affect", "association",

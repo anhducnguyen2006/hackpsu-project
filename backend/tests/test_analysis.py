@@ -1,0 +1,205 @@
+import pandas as pd
+import pytest
+
+from app.api.schemas import (
+    AnalysisRequest,
+    RelevanceAssessmentBatch,
+    ResearchAssessment,
+    ResearchInterpretation,
+    SuitabilityCriteria,
+    SuitabilityCriterion,
+    UCIRecord,
+)
+from app.analysis.service import DatasetAnalysisService
+from app.analysis.exploratory import ExploratoryAnalyzer, ExploratoryAnalysisError
+from app.profiling.profiler import DataProfiler
+
+
+def interpretation() -> ResearchInterpretation:
+    return ResearchInterpretation(
+        original_research_question="Does study time affect academic performance?",
+        research_subject="student academic performance",
+        independent_variables=["study time"],
+        dependent_variables=["grades"],
+        target_population="students",
+        synonyms=[],
+        search_terms=["study", "grades", "students"],
+    )
+
+
+def assessment() -> ResearchAssessment:
+    criteria = {
+        key: SuitabilityCriterion(score=80, explanation="Verified evidence.")
+        for key in (
+            "research_question_and_outcome_alignment",
+            "required_variable_coverage",
+            "sample_size_considerations",
+            "data_quality_and_completeness",
+            "documentation_and_provenance",
+            "population_and_temporal_relevance",
+        )
+    }
+    return ResearchAssessment(
+        dataset_summary="Verified tabular dataset.",
+        relevant_independent_variables=["studytime"],
+        relevant_outcome_variables=["G3"],
+        missing_or_unverified_research_variables=[],
+        why_useful=["Contains verified variables."],
+        statistical_methodological_strengths=["Adequate observations."],
+        data_quality_issues=[],
+        population_limitations=[],
+        sample_size_considerations=["Row count is not independent participant count."],
+        recommended_further_analyses=["Use an ordinal-aware analysis."],
+        overall_assessment="Potentially useful for an observational analysis.",
+        criteria=SuitabilityCriteria(**criteria),
+        final_score=None,
+        score_explanation="Python will calculate this.",
+        ai_status="available",
+    )
+
+
+class FakeRepository:
+    def __init__(self) -> None:
+        self.fetch_calls = 0
+        self.metadata = UCIRecord(
+            dataset_id="uci:320",
+            title="Student Performance",
+            description="Student performance dataset.",
+            repository_url="https://archive.ics.uci.edu/dataset/320",
+            variables=["studytime", "G3"],
+            variable_descriptions={
+                "studytime": "weekly study time",
+                "G3": "final grade",
+            },
+            data_available=True,
+        )
+
+    def get_metadata(self, dataset_id: int) -> UCIRecord:
+        return self.metadata
+
+    def fetch_dataset(self, dataset_id: int):
+        self.fetch_calls += 1
+        return self.metadata, pd.DataFrame(
+            {"studytime": [1, 2, 3], "G3": [10, 12, 15]}
+        ), {}
+
+
+class FakeGemini:
+    def __init__(self) -> None:
+        self.interpret_calls = 0
+        self.assessment_calls = 0
+
+    def interpret(self, question: str):
+        self.interpret_calls += 1
+        return interpretation()
+
+    def assess_suitability(self, question, parsed, dataset, profile):
+        self.assessment_calls += 1
+        assert profile.row_count == 3
+        return assessment()
+
+
+def test_profile_marks_ordinal_values_and_matches_verified_columns() -> None:
+    profile = DataProfiler().profile(
+        pd.DataFrame({"studytime": [1, 2, 3], "G3": [10, 12, 15]}),
+        interpretation(),
+        {"studytime": "weekly study time", "G3": "final grade"},
+    )
+    studytime = next(column for column in profile.columns if column.name == "studytime")
+    assert studytime.measurement_type == "ordinal_or_encoded_numeric"
+    assert [(item.value, item.count) for item in studytime.categorical_summary] == [
+        (1, 1),
+        (2, 1),
+        (3, 1),
+    ]
+    assert "independent" in studytime.research_roles
+    assert profile.row_count == 3
+    assert any(
+        item.research_variable == "study time"
+        and item.matched_columns == ["studytime"]
+        for item in profile.research_variable_evidence
+    )
+
+
+def test_analysis_is_cached_and_score_is_python_recomputed() -> None:
+    repository = FakeRepository()
+    gemini = FakeGemini()
+    service = DatasetAnalysisService(repository, gemini)
+    request = AnalysisRequest(research_question="Does study time affect academic performance?")
+
+    first = service.analyze("uci:320", request)
+    second = service.analyze("uci:320", request)
+
+    assert first.model_dump() == second.model_dump()
+    assert repository.fetch_calls == 1
+    assert gemini.interpret_calls == 1
+    assert gemini.assessment_calls == 1
+    assert first.assessment is not None
+    assert first.assessment.final_score == 80
+
+
+def test_invalid_dataset_id_is_rejected() -> None:
+    with pytest.raises(ValueError):
+        DatasetAnalysisService(FakeRepository(), FakeGemini()).analyze(
+            "https://untrusted.example/data.csv",
+            AnalysisRequest(research_question="Does study time affect academic performance?"),
+        )
+
+
+def test_data_failure_returns_metadata_only() -> None:
+    class BrokenRepository(FakeRepository):
+        def fetch_dataset(self, dataset_id: int):
+            raise RuntimeError("download failed")
+
+    response = DatasetAnalysisService(BrokenRepository(), FakeGemini()).analyze(
+        "uci:320",
+        AnalysisRequest(research_question="Does study time affect academic performance?"),
+    )
+    assert response.data_status == "metadata_only"
+    assert response.profile is None
+    assert response.assessment is None
+
+
+def test_gemini_failure_preserves_verified_profile() -> None:
+    class BrokenAssessmentGemini(FakeGemini):
+        def assess_suitability(self, question, parsed, dataset, profile):
+            raise RuntimeError("temporary Gemini failure")
+
+    response = DatasetAnalysisService(
+        FakeRepository(), BrokenAssessmentGemini()
+    ).analyze(
+        "uci:320",
+        AnalysisRequest(research_question="Does study time affect academic performance?"),
+    )
+    assert response.data_status == "analyzed"
+    assert response.profile is not None
+    assert response.assessment is None
+    assert response.ai_assessment_status == "unavailable"
+    assert any("AI suitability assessment unavailable" in warning for warning in response.warnings)
+
+
+def test_exploratory_analysis_computes_ordinal_group_statistics() -> None:
+    response = ExploratoryAnalyzer().analyze(
+        "uci:320",
+        pd.DataFrame({"studytime": [1, 1, 2, 2, 3, None], "G3": [10, 14, 12, 16, 18, 20]}),
+        "studytime",
+        "G3",
+    )
+    assert response.independent_measurement_type == "ordinal_or_encoded_numeric"
+    assert response.analyzed_observation_count == 5
+    assert response.excluded_observation_count == 1
+    assert [(item.category, item.observations, item.mean_outcome) for item in response.categories] == [
+        (1, 2, 12.0),
+        (2, 2, 14.0),
+        (3, 1, 18.0),
+    ]
+    assert response.categories[0].median_outcome == 12.0
+    assert response.categories[0].standard_deviation is not None
+
+
+def test_exploratory_analysis_rejects_unverified_or_incompatible_variables() -> None:
+    dataframe = pd.DataFrame({"group": ["a", "b"], "outcome": ["high", "low"]})
+    with pytest.raises(ExploratoryAnalysisError, match="not verified"):
+        ExploratoryAnalyzer().analyze("uci:1", dataframe, "missing", "outcome")
+    with pytest.raises(ExploratoryAnalysisError, match="numeric"):
+        ExploratoryAnalyzer().analyze("uci:1", dataframe, "group", "outcome")
