@@ -37,6 +37,9 @@ class Settings(BaseSettings):
         except json.JSONDecodeError:
             parsed = [origin.strip() for origin in self.backend_cors_origins.split(",")]
         origins = [parsed] if isinstance(parsed, str) else [str(origin) for origin in parsed]
+        # The browser serializes an Origin without a trailing slash. Normalize
+        # configuration values so `http://localhost:5173/` still matches it.
+        origins = [origin.strip().rstrip("/") for origin in origins]
         local_aliases = {
             "http://localhost:5173",
             "http://127.0.0.1:5173",
