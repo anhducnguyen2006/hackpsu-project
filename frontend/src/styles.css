@@ -79,6 +79,11 @@ label {
   gap: 12px;
 }
 
+button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 input {
   min-width: 0;
   flex: 1;
@@ -136,6 +141,12 @@ button {
   padding: 24px;
 }
 
+.card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .card-source {
   margin-bottom: 8px;
 }
@@ -157,6 +168,54 @@ button {
   padding-top: 18px;
   color: #475569;
   line-height: 1.6;
+}
+
+.metadata-list {
+  display: grid;
+  gap: 10px;
+  margin: 18px 0;
+}
+
+.metadata-list div {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 12px;
+}
+
+.metadata-list dt {
+  color: #64748b;
+  font-weight: 700;
+}
+
+.metadata-list dd {
+  margin: 0;
+}
+
+.error-state,
+.warning-state,
+.result-explanation {
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.error-state {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.warning-state {
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.result-explanation {
+  color: #475569;
+}
+
+.processing-indicator {
+  color: #1d4ed8;
+  font-size: 0.85rem;
+  font-weight: 700;
 }
 
 .details-panel a {
