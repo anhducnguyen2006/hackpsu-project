@@ -41,6 +41,18 @@ def _config(types: Any, schema: Any, *, max_output_tokens: int) -> Any:
     )
 
 
+def _ensure_complete_response(response: Any, operation: str) -> None:
+    candidates = getattr(response, "candidates", None) or []
+    if not candidates:
+        return
+    reason = getattr(candidates[0], "finish_reason", None)
+    normalized = str(getattr(reason, "value", reason)).upper()
+    if "MAX_TOKENS" in normalized or normalized in {"LENGTH", "RECITATION"}:
+        raise ValueError(
+            f"Gemini {operation} response was truncated ({normalized})."
+        )
+
+
 class GeminiService:
     def __init__(self, client: Any = None) -> None:
         self._client = client
@@ -71,6 +83,7 @@ class GeminiService:
                     ),
                 )
             )
+            _ensure_complete_response(response, "interpretation")
             self._log_usage(response, "interpretation")
             parsed = getattr(response, "parsed", None)
             if parsed is not None:
@@ -131,6 +144,7 @@ class GeminiService:
                     types, RelevanceAssessmentBatch, max_output_tokens=1400
                 ),
             )
+            _ensure_complete_response(response, "reranking")
             self._log_usage(response, "reranking")
             parsed = getattr(response, "parsed", None)
             if parsed is not None:
