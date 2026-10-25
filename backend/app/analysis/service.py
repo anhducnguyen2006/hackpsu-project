@@ -20,6 +20,7 @@ from app.api.schemas import (
 from app.assessment.gemini import GeminiService
 from app.assessment.suitability import calculate_final_score
 from app.config import settings
+from app.discovery.search import DiscoveryService
 from app.discovery.uci import UCIRepositoryError, dataset_record_from_uci
 from app.ingestion.guard import DownloadRejected
 from app.ingestion.retrieve import SelectionError, load_table
@@ -76,8 +77,10 @@ class DatasetAnalysisService:
         warnings: list[str] = []
         interpretation = self._interpret(request.research_question, warnings)
         try:
-            fetched = self.repository.fetch_dataset(numeric_id)
-            self._data_cache[numeric_id] = fetched
+            fetched = self._data_cache.get(numeric_id)
+            if fetched is None:
+                fetched = self.repository.fetch_dataset(numeric_id)
+                self._data_cache[numeric_id] = fetched
             source_record, dataframe, source_metadata = fetched
             source_version = self._source_version(dataframe, source_metadata)
             profile, dataset_database_id, profile_id = self._cached_or_profile(
@@ -655,11 +658,12 @@ class DatasetAnalysisService:
     def _interpret(
         self, question: str, warnings: list[str]
     ) -> ResearchInterpretation | None:
-        try:
-            return self.gemini.interpret(question)
-        except Exception as error:
-            warnings.append(f"AI interpretation unavailable: {self._safe(error)}")
-            return None
+        # Gemini interpretation is intentionally disabled for the research question.
+        # try:
+        #     return self.gemini.interpret(question)
+        # except Exception as error:
+        #     warnings.append(f"AI interpretation unavailable: {self._safe(error)}")
+        return DiscoveryService._fallback_interpretation(question)
 
     @staticmethod
     def _parse_id(dataset_id: str) -> int:
