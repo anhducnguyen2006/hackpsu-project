@@ -1,4 +1,5 @@
 import { FormEvent, useRef, useState } from "react";
+import { useAuth0 } from "@auth0/auth0-react";
 import type {
   DatasetAnalysisResponse,
   DatasetCardData,
@@ -533,6 +534,14 @@ function ComparisonView({
 }
 
 function App() {
+  const {
+    error: authError,
+    isAuthenticated,
+    isLoading: authLoading,
+    loginWithRedirect,
+    logout,
+    user,
+  } = useAuth0();
   const [question, setQuestion] = useState("");
   const [result, setResult] = useState<DiscoveryResponse | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -546,6 +555,18 @@ function App() {
   const [compareOpen, setCompareOpen] = useState(false);
   const searchSequence = useRef(0);
   const activeSearch = useRef<AbortController | null>(null);
+
+  if (authLoading) {
+    return <main className="page-shell"><p className="empty-state">Loading authentication...</p></main>;
+  }
+
+  function handleSignup() {
+    void loginWithRedirect({ authorizationParams: { screen_hint: "signup" } });
+  }
+
+  function handleLogout() {
+    void logout({ logoutParams: { returnTo: window.location.origin } });
+  }
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -623,11 +644,25 @@ function App() {
   return (
     <main className="page-shell">
       <header className="hero">
+        <div className="auth-controls">
+          {isAuthenticated ? (
+            <>
+              <span>Signed in{user?.email ? ` as ${user.email}` : ""}</span>
+              <button className="secondary-button" onClick={handleLogout} type="button">Log out</button>
+            </>
+          ) : (
+            <>
+              <button className="secondary-button" onClick={handleSignup} type="button">Sign up</button>
+              <button onClick={() => void loginWithRedirect()} type="button">Log in</button>
+            </>
+          )}
+        </div>
         <p className="eyebrow">AI-assisted research workflow</p>
         <h1>Research Dataset Discovery</h1>
         <p className="subtitle">
           Find real datasets and understand whether they can support your research question.
         </p>
+        {authError && <p className="error-state">{authError.message}</p>}
       </header>
       <form className="search-panel" id="research-search" onSubmit={handleSubmit}>
         <label htmlFor="research-question">Research question</label>
