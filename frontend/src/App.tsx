@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { ResearchQuestion } from "./components/ResearchQuestion";
 import { EXAMPLE_QUESTION } from "./demo/researchExample";
 import { EXAMPLE_INTERPRETATION } from "./demo/researchExample";
@@ -17,11 +18,11 @@ const stages: { key: PreviewStage; label: string }[] = [
   { key: "analysis", label: "Analysis" },
 ];
 
-function App() {
+function App({ authControls }: { authControls?: ReactNode }) {
   const [stage, setStage] = useState<PreviewStage>("question");
   return <div className="site-shell">
     <header className="site-header">
-      <div className="brand-row"><span className="brand">DataOPedia</span><span className="preview-label">Static preview · cached UCI example</span></div>
+      <div className="brand-row"><span className="brand">DataOPedia</span><span className="preview-label">Static preview · cached UCI example</span>{authControls}</div>
       <nav aria-label="Preview stages" className="stage-nav">
         {stages.map(({ key, label }, index) => <button type="button" key={key} aria-current={stage === key ? "page" : undefined} onClick={() => setStage(key)}><span className="nav-index" aria-hidden="true">0{index + 1}</span>{label}</button>)}
       </nav>
