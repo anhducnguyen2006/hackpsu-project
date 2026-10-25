@@ -187,9 +187,28 @@ class HarvardDataverseService:
             if isinstance(item, dict)
         ] if files_declared else []
         status, reason, resources = summarize_files(assessments, files_declared=files_declared)
-        title = self._citation_title(version) or record.title
+        citation = self._citation_fields(version)
+        title = citation.get("title") or self._citation_title(version) or record.title
+        description = citation.get("description") or record.description
+        subjects = citation.get("subjects") or record.subjects
+        keywords = citation.get("keywords") or record.keywords
+        authors = citation.get("authors") or record.authors
+        geographic = citation.get("geographic_coverage") or record.geographic_coverage
+        temporal = citation.get("temporal_coverage") or record.temporal_coverage
+        publisher = citation.get("publisher") or record.publisher
+        publication_date = citation.get("publication_date") or record.publication_date
+        license_name = citation.get("license") or record.license
         return record.model_copy(update={
             "title": title,
+            "description": description,
+            "subjects": subjects,
+            "keywords": keywords,
+            "authors": authors,
+            "geographic_coverage": geographic,
+            "temporal_coverage": temporal,
+            "publisher": publisher,
+            "publication_date": publication_date,
+            "license": license_name,
             "eligibility_status": status,
             "eligibility_reason": reason,
             "download_resources": resources,
@@ -268,19 +287,165 @@ class HarvardDataverseService:
 
     @staticmethod
     def _citation_title(version: dict[str, Any]) -> str | None:
-        blocks = version.get("metadataBlocks")
-        citation = blocks.get("citation") if isinstance(blocks, dict) else None
-        fields = citation.get("fields") if isinstance(citation, dict) else None
-        if not isinstance(fields, list):
-            return None
+        fields = HarvardDataverseService._citation_field_list(version)
         for field in fields:
             if (
-                isinstance(field, dict)
-                and field.get("typeName") == "title"
+                field.get("typeName") == "title"
                 and isinstance(field.get("value"), str)
                 and field["value"].strip()
             ):
                 return field["value"].strip()
+        return None
+
+    @classmethod
+    def _citation_fields(cls, version: dict[str, Any]) -> dict[str, Any]:
+        """Extract verified citation metadata. Missing fields stay absent."""
+        extracted: dict[str, Any] = {}
+        for field in cls._citation_field_list(version):
+            type_name = field.get("typeName")
+            value = field.get("value")
+            if type_name == "title" and isinstance(value, str) and value.strip():
+                extracted["title"] = value.strip()
+            elif type_name == "dsDescription":
+                description = cls._compound_text(value, "dsDescriptionValue")
+                if description:
+                    extracted["description"] = description
+            elif type_name == "author":
+                authors = cls._compound_list(value, "authorName")
+                if authors:
+                    extracted["authors"] = authors
+            elif type_name == "subject":
+                subjects = cls._string_or_list(value)
+                if subjects:
+                    extracted["subjects"] = subjects
+            elif type_name == "keyword":
+                keywords = cls._compound_list(value, "keywordValue")
+                if keywords:
+                    extracted["keywords"] = keywords
+            elif type_name == "producer":
+                producers = cls._compound_list(value, "producerName")
+                if producers:
+                    extracted["publisher"] = producers[0]
+            elif type_name in {"distributionDate", "dateOfDeposit"} and isinstance(
+                value, str
+            ) and value.strip():
+                extracted.setdefault("publication_date", value.strip())
+            elif type_name == "geographicCoverage":
+                places = cls._geographic_values(value)
+                if places:
+                    extracted["geographic_coverage"] = places
+            elif type_name == "timePeriodCovered":
+                periods = cls._temporal_values(value)
+                if periods:
+                    extracted["temporal_coverage"] = periods
+            elif type_name in {"license", "rights"}:
+                license_name = cls._license_value(value)
+                if license_name:
+                    extracted["license"] = license_name
+        return extracted
+
+    @staticmethod
+    def _citation_field_list(version: dict[str, Any]) -> list[dict[str, Any]]:
+        blocks = version.get("metadataBlocks")
+        citation = blocks.get("citation") if isinstance(blocks, dict) else None
+        fields = citation.get("fields") if isinstance(citation, dict) else None
+        if not isinstance(fields, list):
+            return []
+        return [field for field in fields if isinstance(field, dict)]
+
+    @classmethod
+    def _compound_text(cls, value: object, key: str) -> str | None:
+        values = cls._compound_list(value, key)
+        if not values:
+            return None
+        return " ".join(values)
+
+    @classmethod
+    def _compound_list(cls, value: object, key: str) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        items: list[str] = []
+        for entry in value:
+            if not isinstance(entry, dict):
+                continue
+            nested = entry.get(key)
+            if isinstance(nested, dict):
+                text = cls._text(nested.get("value"))
+            else:
+                text = cls._text(nested)
+            if text and text not in items:
+                items.append(text)
+        return items
+
+    @classmethod
+    def _string_or_list(cls, value: object) -> list[str]:
+        if isinstance(value, str):
+            text = cls._text(value)
+            return [text] if text else []
+        if not isinstance(value, list):
+            return []
+        items: list[str] = []
+        for entry in value:
+            text = cls._text(entry) if not isinstance(entry, dict) else cls._text(
+                entry.get("value")
+            )
+            if text and text not in items:
+                items.append(text)
+        return items
+
+    @classmethod
+    def _geographic_values(cls, value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        places: list[str] = []
+        for entry in value:
+            if not isinstance(entry, dict):
+                text = cls._text(entry)
+                if text and text not in places:
+                    places.append(text)
+                continue
+            for key in ("country", "state", "city", "otherGeographicCoverage"):
+                nested = entry.get(key)
+                text = (
+                    cls._text(nested.get("value"))
+                    if isinstance(nested, dict)
+                    else cls._text(nested)
+                )
+                if text and text not in places:
+                    places.append(text)
+        return places
+
+    @classmethod
+    def _temporal_values(cls, value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        periods: list[str] = []
+        for entry in value:
+            if not isinstance(entry, dict):
+                text = cls._text(entry)
+                if text and text not in periods:
+                    periods.append(text)
+                continue
+            start = entry.get("timePeriodCoveredStart")
+            end = entry.get("timePeriodCoveredEnd")
+            start_text = (
+                cls._text(start.get("value")) if isinstance(start, dict) else cls._text(start)
+            )
+            end_text = cls._text(end.get("value")) if isinstance(end, dict) else cls._text(end)
+            if start_text and end_text:
+                period = f"{start_text}–{end_text}"
+            else:
+                period = start_text or end_text
+            if period and period not in periods:
+                periods.append(period)
+        return periods
+
+    @classmethod
+    def _license_value(cls, value: object) -> str | None:
+        if isinstance(value, str):
+            return cls._text(value)
+        if isinstance(value, dict):
+            return cls._text(value.get("value") or value.get("name") or value.get("uri"))
         return None
 
     @staticmethod

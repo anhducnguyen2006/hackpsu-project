@@ -52,6 +52,10 @@ export interface DatasetCardData {
   temporal_coverage?: string[];
   doi?: string | null;
   license?: string | null;
+  authors?: string[];
+  publisher?: string | null;
+  publication_date?: string | null;
+  keywords?: string[];
   eligibility_status?: EligibilityStatus;
   eligibility_reason?: string | null;
   download_performed?: boolean;

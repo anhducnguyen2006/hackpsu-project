@@ -34,12 +34,25 @@ def _failure_label(error: Exception) -> str:
 
 
 def _config(types: Any, schema: Any, *, max_output_tokens: int) -> Any:
-    return types.GenerateContentConfig(
-        response_mime_type="application/json",
-        response_schema=schema,
-        max_output_tokens=max_output_tokens,
-        thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW),
-    )
+    kwargs: dict[str, Any] = {
+        "response_mime_type": "application/json",
+        "response_schema": schema,
+        "max_output_tokens": max_output_tokens,
+    }
+    # Thinking is optional; unsupported model/config combinations should not
+    # block structured JSON generation for interpretation or suitability.
+    thinking_config = getattr(types, "ThinkingConfig", None)
+    thinking_level = getattr(types, "ThinkingLevel", None)
+    if thinking_config is not None and thinking_level is not None:
+        level = getattr(thinking_level, "LOW", None) or getattr(
+            thinking_level, "MINIMAL", None
+        )
+        if level is not None:
+            try:
+                kwargs["thinking_config"] = thinking_config(thinking_level=level)
+            except Exception:
+                pass
+    return types.GenerateContentConfig(**kwargs)
 
 
 def _ensure_complete_response(response: Any, operation: str) -> None:
@@ -211,12 +224,9 @@ class GeminiService:
             response = client.models.generate_content(
                 model=settings.gemini_model,
                 contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=ResearchAssessment,
-                    max_output_tokens=2200,
-                ),
+                config=_config(types, ResearchAssessment, max_output_tokens=2200),
             )
+            _ensure_complete_response(response, "suitability")
             self._log_usage(response, "suitability")
             parsed = getattr(response, "parsed", None)
             if parsed is not None:
@@ -242,9 +252,11 @@ class GeminiService:
             api_key=settings.gemini_api_key,
             http_options=types.HttpOptions(
                 retry_options=types.HttpRetryOptions(
-                    attempts=2,
-                    initialDelay=1,
-                    maxDelay=4,
+                    # 503 "high demand" spikes are common; give the provider a
+                    # few short backoff attempts before surfacing unavailable.
+                    attempts=4,
+                    initialDelay=2,
+                    maxDelay=12,
                     httpStatusCodes=[408, 500, 502, 503, 504],
                 ),
                 timeout=settings.gemini_request_timeout_ms,

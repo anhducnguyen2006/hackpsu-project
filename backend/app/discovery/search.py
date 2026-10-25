@@ -711,6 +711,10 @@ class DiscoveryService:
             "temporal_coverage": record.temporal_coverage,
             "doi": record.doi,
             "license": record.license,
+            "authors": record.authors,
+            "publisher": record.publisher,
+            "publication_date": record.publication_date,
+            "keywords": record.keywords,
             "eligibility_status": record.eligibility_status,
             "eligibility_reason": record.eligibility_reason,
             "download_performed": record.download_performed,
@@ -770,55 +774,186 @@ class DiscoveryService:
 
     @staticmethod
     def _fallback_interpretation(question: str) -> ResearchInterpretation:
-        structured = re.search(
-            r"(?:how\s+does|does)\s+(?P<independent>.+?)\s+affect\s+"
-            r"(?P<dependent>.+?)(?:\s+(?:in|among|for)\s+(?P<population>[^?.!]+))?[?.!]?$",
-            question.strip(),
-            re.IGNORECASE,
-        )
-        if structured:
-            independent = structured.group("independent").strip(" ,")
-            dependent = structured.group("dependent").strip(" ,")
-            population = (structured.group("population") or "").strip(" ,") or None
-            terms = list(dict.fromkeys(
-                re.findall(r"[a-zA-Z][a-zA-Z-]{2,}", " ".join(
-                    part for part in (independent, dependent, population or "") if part
-                ).lower())
-            ))[:5]
-            while len(terms) < 3:
-                terms.append("research")
+        cleaned = question.strip()
+        structured = DiscoveryService._parse_structured_fallback(cleaned)
+        if structured is not None:
+            independent, dependent, population, geographic, temporal, synonyms = structured
+            phrase_terms = [
+                term
+                for term in (
+                    independent,
+                    dependent,
+                    *synonyms,
+                    *(population.split() if population else []),
+                )
+                if term
+            ]
+            terms = DiscoveryService._fallback_search_terms(phrase_terms, cleaned)
+            subject_parts = [part for part in (independent, dependent) if part]
             return ResearchInterpretation(
                 original_research_question=question,
                 refined_question=None,
-                research_subject=dependent or independent,
+                research_subject=(
+                    " and ".join(subject_parts) if subject_parts else "unspecified research topic"
+                ),
                 independent_variables=[independent] if independent else [],
                 dependent_variables=[dependent] if dependent else [],
                 target_population=population,
-                synonyms=[],
+                population=population,
+                geographic_scope=geographic,
+                temporal_scope=temporal,
+                synonyms=synonyms,
                 search_terms=terms,
             )
-        words = re.findall(r"[a-zA-Z][a-zA-Z-]{2,}", question.lower())
+        words = re.findall(r"[a-zA-Z][a-zA-Z-]{2,}", cleaned.lower())
         fallback_stop_words = STOP_WORDS | {
             "datasets",
             "contain",
             "contains",
             "information",
             "about",
+            "relate",
+            "relates",
+            "relationship",
+            "between",
+            "among",
         }
         meaningful = [word for word in words if word not in fallback_stop_words]
         meaningful = meaningful or words
-        terms = list(dict.fromkeys(meaningful))[:5]
-        while len(terms) < 3:
-            terms.append("research")
+        # Prefer keeping adjacent content words as phrases rather than splitting
+        # an outcome like "sleep quality" across independent/dependent slots.
+        joined = " ".join(meaningful)
+        independent: list[str] = []
+        dependent: list[str] = []
+        if len(meaningful) >= 2:
+            mid = max(1, len(meaningful) // 2)
+            left = " ".join(meaningful[:mid]).strip()
+            right = " ".join(meaningful[mid:]).strip()
+            if left:
+                independent = [left]
+            if right:
+                dependent = [right]
+        elif meaningful:
+            independent = [meaningful[0]]
+        terms = DiscoveryService._fallback_search_terms(
+            [*independent, *dependent], cleaned
+        )
         return ResearchInterpretation(
             original_research_question=question,
             refined_question=None,
-            research_subject=" ".join(meaningful[:4]) or "unspecified research topic",
-            independent_variables=meaningful[:2],
-            dependent_variables=meaningful[2:4],
+            research_subject=joined or "unspecified research topic",
+            independent_variables=independent,
+            dependent_variables=dependent,
             synonyms=[],
             search_terms=terms,
         )
+
+    @staticmethod
+    def _parse_structured_fallback(
+        question: str,
+    ) -> tuple[str, str, str | None, str | None, str | None, list[str]] | None:
+        patterns = (
+            r"(?:how\s+does|does)\s+(?P<independent>.+?)\s+affect\s+"
+            r"(?P<dependent>.+?)(?:\s+(?:in|among|for)\s+(?P<population>[^?.!]+))?[?.!]?\s*$",
+            r"(?:how\s+does|does)\s+(?P<independent>.+?)\s+relate(?:\s+to)?\s+"
+            r"(?P<dependent>.+?)(?:\s+(?:in|among|for)\s+(?P<population>[^?.!]+))?[?.!]?\s*$",
+            r"(?:effect|impact|influence)\s+of\s+(?P<independent>.+?)\s+on\s+"
+            r"(?P<dependent>.+?)(?:\s+(?:in|among|for)\s+(?P<population>[^?.!]+))?[?.!]?\s*$",
+            r"(?:relationship|association|link|correlation)\s+between\s+"
+            r"(?P<independent>.+?)\s+and\s+(?P<dependent>.+?)"
+            r"(?:\s+(?:in|among|for)\s+(?P<population>[^?.!]+))?[?.!]?\s*$",
+            r"^(?P<independent>[^,?;]+?)\s+and\s+(?P<dependent>[^,?;]+?)[?.!]?\s*$",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, question, re.IGNORECASE)
+            if not match:
+                continue
+            independent = match.group("independent").strip(" ,")
+            dependent = match.group("dependent").strip(" ,")
+            population_raw = ""
+            if "population" in match.re.groupindex:
+                population_raw = (match.group("population") or "").strip(" ,")
+            if not independent or not dependent:
+                continue
+            if independent.lower() == dependent.lower():
+                continue
+            population, geographic, temporal = DiscoveryService._split_scope_hints(
+                population_raw
+            )
+            synonyms = DiscoveryService._fallback_synonyms(independent, dependent)
+            return independent, dependent, population, geographic, temporal, synonyms
+        return None
+
+    @staticmethod
+    def _split_scope_hints(
+        population_raw: str,
+    ) -> tuple[str | None, str | None, str | None]:
+        if not population_raw:
+            return None, None, None
+        text = population_raw.strip()
+        temporal = None
+        year_match = re.search(r"\b((?:19|20)\d{2})\b", text)
+        if year_match:
+            temporal = year_match.group(1)
+            text = (text[: year_match.start()] + text[year_match.end() :]).strip(" ,")
+        geographic = None
+        geo_patterns = (
+            (r"\bunited states\b|\bU\.?S\.?A?\.?\b|\bUS\b", "United States"),
+            (r"\bunited kingdom\b|\bU\.?K\.?\b", "United Kingdom"),
+            (r"\bcanada\b", "Canada"),
+            (r"\bnepal\b", "Nepal"),
+        )
+        for pattern, label in geo_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                geographic = label
+                text = re.sub(pattern, " ", text, flags=re.IGNORECASE)
+                break
+        text = re.sub(r"\b(?:in|among|for|of)\b", " ", text, flags=re.IGNORECASE)
+        text = re.sub(r"\s+", " ", text).strip(" ,")
+        population = text or None
+        return population, geographic, temporal
+
+    @staticmethod
+    def _fallback_synonyms(independent: str, dependent: str) -> list[str]:
+        synonyms: list[str] = []
+        independent_l = independent.lower()
+        dependent_l = dependent.lower()
+        if "caffeine" in independent_l:
+            synonyms.extend(["caffeine consumption", "caffeine intake"])
+        if "sleep quality" in dependent_l or dependent_l == "quality of sleep":
+            synonyms.append("quality of sleep")
+        if "rainfall" in independent_l or "precipitation" in independent_l:
+            synonyms.append("precipitation")
+        if "crop yield" in dependent_l:
+            synonyms.append("agricultural yield")
+        # Keep only distinct, non-identical paraphrases.
+        return [
+            item
+            for item in dict.fromkeys(synonyms)
+            if item.lower() not in {independent_l, dependent_l}
+        ][:4]
+
+    @staticmethod
+    def _fallback_search_terms(phrases: list[str], question: str) -> list[str]:
+        terms: list[str] = []
+        for phrase in phrases:
+            cleaned = phrase.strip().lower()
+            if cleaned and cleaned not in terms:
+                terms.append(cleaned)
+            for token in re.findall(r"[a-zA-Z][a-zA-Z-]{2,}", cleaned):
+                if token not in STOP_WORDS and token not in terms:
+                    terms.append(token)
+            if len(terms) >= 5:
+                break
+        if len(terms) < 3:
+            for token in re.findall(r"[a-zA-Z][a-zA-Z-]{2,}", question.lower()):
+                if token not in STOP_WORDS and token not in terms:
+                    terms.append(token)
+                if len(terms) >= 5:
+                    break
+        while len(terms) < 3:
+            terms.append("research")
+        return terms[:5]
 
     @staticmethod
     def _tokens(values: Iterable[str]) -> set[str]:

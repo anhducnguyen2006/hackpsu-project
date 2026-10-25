@@ -192,6 +192,10 @@ class DatasetRecord(BaseModel):
     temporal_coverage: list[str] = Field(default_factory=list)
     doi: str | None = None
     license: str | None = None
+    authors: list[str] = Field(default_factory=list)
+    publisher: str | None = None
+    publication_date: str | None = None
+    keywords: list[str] = Field(default_factory=list)
     data_available: bool | None = None
     eligibility_status: Literal[
         "supported_resource_verified",
@@ -238,7 +242,13 @@ class DatasetRecord(BaseModel):
         return normalized
 
     @field_validator(
-        "description", "doi", "license", "landing_page_url", mode="before"
+        "description",
+        "doi",
+        "license",
+        "landing_page_url",
+        "publisher",
+        "publication_date",
+        mode="before",
     )
     @classmethod
     def normalize_optional_metadata(cls, value: object) -> object:
@@ -248,7 +258,12 @@ class DatasetRecord(BaseModel):
         return value
 
     @field_validator(
-        "subjects", "geographic_coverage", "temporal_coverage", mode="before"
+        "subjects",
+        "geographic_coverage",
+        "temporal_coverage",
+        "authors",
+        "keywords",
+        mode="before",
     )
     @classmethod
     def normalize_text_lists(cls, value: object) -> object:
@@ -318,6 +333,10 @@ class DatasetResult(UCIRecord):
     temporal_coverage: list[str] = Field(default_factory=list)
     doi: str | None = None
     license: str | None = None
+    authors: list[str] = Field(default_factory=list)
+    publisher: str | None = None
+    publication_date: str | None = None
+    keywords: list[str] = Field(default_factory=list)
     eligibility_status: Literal[
         "supported_resource_verified",
         "download_verified",

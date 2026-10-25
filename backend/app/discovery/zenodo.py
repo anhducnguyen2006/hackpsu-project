@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Iterable
 from typing import Any
 
@@ -146,16 +147,21 @@ class ZenodoService:
         license_name = cls._license_name(metadata.get("license"))
         version = metadata.get("version")
         source_version = version.strip() if isinstance(version, str) and version.strip() else None
+        description = cls._plain_text(metadata.get("description"))
         return DatasetRecord(
             id=f"zenodo:{source_id}",
             source=cls.source,
             source_id=source_id,
             title=title,
-            description=cls._text(metadata.get("description")),
+            description=description,
             landing_page_url=landing_page_url,
             download_resources=resources,
             verification_candidates=candidates,
             subjects=cls._subjects(metadata.get("subjects")),
+            keywords=cls._keywords(metadata.get("keywords")),
+            authors=cls._creators(metadata.get("creators")),
+            publisher=cls._text(metadata.get("publisher")) or "Zenodo",
+            publication_date=cls._text(metadata.get("publication_date")),
             doi=cls._text(metadata.get("doi") or item.get("doi")),
             license=license_name,
             data_available=True if resources else False if files_declared else None,
@@ -273,6 +279,46 @@ class ZenodoService:
             if normalized and normalized not in subjects:
                 subjects.append(normalized)
         return subjects
+
+    @classmethod
+    def _keywords(cls, value: object) -> list[str]:
+        if isinstance(value, str):
+            text = cls._text(value)
+            return [text] if text else []
+        if not isinstance(value, list):
+            return []
+        keywords: list[str] = []
+        for item in value:
+            if isinstance(item, dict):
+                normalized = cls._text(item.get("term") or item.get("name") or item.get("id"))
+            else:
+                normalized = cls._text(item)
+            if normalized and normalized not in keywords:
+                keywords.append(normalized)
+        return keywords
+
+    @classmethod
+    def _creators(cls, value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        authors: list[str] = []
+        for item in value:
+            if isinstance(item, dict):
+                normalized = cls._text(item.get("name") or item.get("affiliation"))
+            else:
+                normalized = cls._text(item)
+            if normalized and normalized not in authors:
+                authors.append(normalized)
+        return authors
+
+    @classmethod
+    def _plain_text(cls, value: object) -> str | None:
+        text = cls._text(value)
+        if text is None:
+            return None
+        # Zenodo descriptions are often HTML; keep readable plain text only.
+        without_tags = re.sub(r"<[^>]+>", " ", text)
+        return cls._text(re.sub(r"\s+", " ", without_tags))
 
     @staticmethod
     def _license_name(value: object) -> str | None:

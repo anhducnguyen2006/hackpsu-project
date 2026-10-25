@@ -19,12 +19,13 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("preserves the research preview and its six stages at the root", () => {
+it("preserves the research preview stages at the root", () => {
   render(<AppEntry />);
   expect(screen.getByText("Static preview · cached UCI example")).toBeVisible();
   const navigation = screen.getByRole("navigation", { name: "Research navigation" });
-  expect(navigation.children).toHaveLength(6);
-  for (const name of ["Question", "Interpretation", "Datasets", "Graph", "Analysis", "Past Research"]) {
+  const stageNames = ["Question", "Interpretation", "Datasets", "Graph", "Analysis", "Research graph", "Past Research"];
+  expect(navigation.children).toHaveLength(stageNames.length);
+  for (const name of stageNames) {
     expect(within(navigation).getByRole("button", { name })).toBeVisible();
   }
   expect(screen.queryByTestId("research-world")).not.toBeInTheDocument();

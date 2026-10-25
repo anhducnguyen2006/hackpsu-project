@@ -226,7 +226,7 @@ def test_graph_updates_run_after_persistence_commit(monkeypatch) -> None:
     )
 
     discovery_route._persist_discovery_result_background(
-        "Question", "normalized question", [], None
+        "Question", "normalized question", [], None, "auth0|user-a"
     )
 
     assert events == [("persist", 41), ("semantic", 41), ("shared", 41)]

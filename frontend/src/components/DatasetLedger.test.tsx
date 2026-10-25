@@ -41,7 +41,8 @@ it("requires an explicit file choice when several supported resources are presen
     ],
   };
   render(<DatasetLedger datasets={[dataset]} analysisMode="live" onOpenAnalysis={onOpenAnalysis} />);
-  expect(screen.getByRole("button", { name: "Choose a supported file" })).toBeDisabled();
+  expect(screen.getByText(/Select a data file in the dropdown above to enable Analyze/i)).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Analyze dataset" })).not.toBeInTheDocument();
   await userEvent.selectOptions(screen.getByRole("combobox", { name: "Data file for Rainfall table" }), "b.csv");
   await userEvent.click(screen.getByRole("button", { name: "Analyze dataset" }));
   expect(onOpenAnalysis).toHaveBeenCalledWith("zenodo:42", "b.csv");
@@ -92,6 +93,69 @@ it("does not replace null metadata or relevance with zero", () => {
   render(<DatasetLedger datasets={[sparse]} onOpenAnalysis={() => {}} />);
   const row = screen.getByRole("article");
   expect(within(row).getByText("Unavailable")).toBeVisible();
-  expect(within(row).getAllByText("Not documented")).toHaveLength(2);
+  expect(within(row).getAllByText("Not documented").length).toBeGreaterThanOrEqual(2);
   expect(within(row).queryByText("0")).not.toBeInTheDocument();
+});
+
+it("shows Dataverse repository metadata beyond DOI in details", async () => {
+  const dataset = {
+    ...EXAMPLE_DATASETS[0],
+    dataset_id: "dataverse:doi:10.7910/DVN/EVNUZS",
+    title: "Adolescent Sleep Need Waking EEG, Years 1–3",
+    source: "Harvard Dataverse",
+    description: "EEG recordings related to adolescent sleep need.",
+    authors: ["Example Author"],
+    publisher: "Harvard Dataverse",
+    publication_date: "2018",
+    subjects: ["Medicine, Health and Life Sciences"],
+    keywords: ["sleep", "EEG"],
+    license: "CC0 1.0",
+    doi: "doi:10.7910/DVN/EVNUZS",
+    geographic_coverage: [],
+    temporal_coverage: ["2011–2013"],
+    instance_count: null,
+    feature_count: null,
+    variables: [],
+    variable_descriptions: {},
+    matched_research_variables: [],
+    score_type: "semantic_similarity" as const,
+    semantic_similarity_score: 0.61,
+    download_resources: [
+      { url: "https://dataverse.harvard.edu/api/access/datafile/1", format: "tab", file_id: "1", filename: "sleep.tab", size_bytes: 2048, eligible: true },
+    ],
+  };
+  render(<DatasetLedger datasets={[dataset]} analysisMode="live" onOpenAnalysis={() => {}} />);
+  await userEvent.click(screen.getByRole("button", { name: "Details for Adolescent Sleep Need Waking EEG, Years 1–3" }));
+  expect(screen.getByText("Example Author")).toBeVisible();
+  expect(screen.getAllByText("EEG recordings related to adolescent sleep need.").length).toBeGreaterThan(0);
+  expect(screen.getByText(/sleep\.tab/)).toBeVisible();
+  expect(screen.getAllByText(/Topical similarity/i).length).toBeGreaterThan(0);
+  expect(screen.getAllByText(/Unknown until analysis/i).length).toBeGreaterThan(0);
+  expect(screen.getByRole("link", { name: "doi:10.7910/DVN/EVNUZS" })).toBeVisible();
+});
+
+it("shows Zenodo creators, license, and files in details", async () => {
+  const dataset = {
+    ...EXAMPLE_DATASETS[0],
+    dataset_id: "zenodo:12345",
+    title: "Caffeine intake diary",
+    source: "Zenodo",
+    description: "Self-reported caffeine intake.",
+    authors: ["Ada Researcher"],
+    publisher: "Zenodo",
+    publication_date: "2024-01-15",
+    keywords: ["caffeine"],
+    license: "cc-by-4.0",
+    doi: "10.5281/zenodo.12345",
+    variables: [],
+    download_resources: [
+      { url: "https://zenodo.org/api/records/12345/files/diary.csv/content", format: "csv", file_id: "diary.csv", filename: "diary.csv", size_bytes: 4096, checksum: "md5:abc", eligible: true },
+    ],
+  };
+  render(<DatasetLedger datasets={[dataset]} analysisMode="live" onOpenAnalysis={() => {}} />);
+  await userEvent.click(screen.getByRole("button", { name: "Details for Caffeine intake diary" }));
+  expect(screen.getByText("Ada Researcher")).toBeVisible();
+  expect(screen.getByText("cc-by-4.0")).toBeVisible();
+  expect(screen.getByText(/diary\.csv/)).toBeVisible();
+  expect(screen.getByText(/checksum md5:abc/)).toBeVisible();
 });

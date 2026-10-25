@@ -109,9 +109,17 @@ it("shows live file statistics and the Python suitability score without the demo
 });
 
 it("shows an explicit unavailable assessment without inventing a score", () => {
-  render(<AnalysisView analysis={{ ...liveAnalysis, assessment: null, ai_assessment_status: "unavailable", history_saved: false }} presentation="computed" />);
-  expect(screen.getByText("AI assessment unavailable")).toBeVisible();
+  render(<AnalysisView analysis={{ ...liveAnalysis, assessment: null, ai_assessment_status: "unavailable", history_saved: false, warnings: ["AI suitability assessment unavailable: model unavailable"] }} presentation="computed" />);
+  expect(screen.getByText("Live AI assessment unavailable")).toBeVisible();
+  expect(screen.getAllByText(/AI suitability assessment unavailable/i).length).toBeGreaterThan(0);
+  expect(screen.queryByText(/No verifiable cached AI assessment/i)).not.toBeInTheDocument();
   expect(screen.getByText("This result was not saved to Past Research.")).toBeVisible();
   expect(screen.getByText("12474 observed records")).toBeVisible();
   expect(screen.queryByText("Python suitability score")).not.toBeInTheDocument();
+});
+
+it("keeps cached-demo wording only for the preview example", () => {
+  render(<AnalysisView analysis={EXAMPLE_ANALYSIS} presentation="preview" />);
+  expect(screen.getAllByText(/No verifiable cached AI assessment/i).length).toBeGreaterThan(0);
+  expect(screen.queryByText("Live AI assessment unavailable")).not.toBeInTheDocument();
 });

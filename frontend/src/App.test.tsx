@@ -114,7 +114,7 @@ it("renders the live interpretation and discovery response", async () => {
   await userEvent.click(screen.getByRole("button", { name: "Datasets" }));
   expect(await screen.findByText("Live Crop Dataset")).toBeVisible();
   expect(screen.getByText("0.88")).toBeVisible();
-  expect(screen.getByText("Cosine similarity, not a probability or suitability score")).toBeVisible();
+  expect(screen.getByText(/Topical similarity to the question/i)).toBeVisible();
   expect(screen.getByText("supported resource verified; not downloaded")).toBeVisible();
   expect(request).toHaveBeenCalledWith("http://localhost:8000/api/v1/discovery/search", expect.objectContaining({
     method: "POST",
