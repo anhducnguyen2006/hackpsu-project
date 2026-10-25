@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="510" viewBox="0 0 780 510" role="img" aria-labelledby="title desc">
+<title id="title">When a gene becomes a date.</title><desc id="desc">Spreadsheet auto-formatting can corrupt scientific identifiers. Editorial paraphrase of Retraction Watch. Verified 25 Oct 2026.</desc>
+<rect width="780" height="510" rx="28" fill="#262627"/>
+<rect x="48" y="47" width="7" height="27" rx="2" fill="#a6a6a8"/>
+<text x="72" y="69" font-family="Arial, sans-serif" font-size="28" fill="#bcbcc1">Research reporting</text>
+<text font-family="Georgia, serif" font-size="54" font-weight="400" letter-spacing="-1.3" fill="#f3f2ed"><tspan x="48" y="150">When a gene becomes a</tspan><tspan x="48" y="209">date.</tspan></text>
+<text font-family="Arial, sans-serif" font-size="31" fill="#c7c7cb"><tspan x="48" y="273">Spreadsheet auto-formatting can corrupt</tspan><tspan x="48" y="312">scientific identifiers.</tspan></text>
+<text x="48" y="429" font-family="Arial, sans-serif" font-size="27" fill="#f3f2ed">Retraction Watch</text>
+<text x="48" y="475" font-family="Arial, sans-serif" font-size="23" fill="#a9a9af">Editorial summary · Verified 25 Oct 2026</text>
+<path d="M694 72h28v28m-28 0 28-28" fill="none" stroke="#aaaab0" stroke-width="3"/>
+</svg>
