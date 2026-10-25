@@ -10,6 +10,7 @@ from app.demo import demo_search
 from app.discovery.embeddings import EmbeddingService
 from app.discovery.search import DiscoveryService, build_external_providers
 from app.discovery.uci import UCIRepositoryService
+from app.research.repository import persist_discovery_result
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
 logger = logging.getLogger(__name__)
@@ -46,6 +47,21 @@ def search(request: DiscoveryRequest) -> DiscoveryResponse:
     ) = service.search_with_status(
         request.research_question, request.limit
     )
+    try:
+        persist_discovery_result(
+            question=request.research_question,
+            normalized_question=(
+                interpretation.refined_question if interpretation else None
+            ),
+            datasets=datasets,
+        )
+    except Exception:
+        logger.warning(
+            "discovery persistence unavailable; returning live discovery response"
+        )
+        warnings.append(
+            "Research history persistence unavailable; discovery results were not saved."
+        )
     explanation = (
         "Results are ranked using verified repository metadata and local semantic "
         "similarity. Semantic similarity is not research suitability; full suitability "

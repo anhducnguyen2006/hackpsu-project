@@ -1,7 +1,15 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import logging
+from typing import Any
+
+import pandas as pd
+
 from app.api.schemas import (
     AnalysisRequest,
+    DataProfile,
     DatasetAnalysisResponse,
     ExploreRequest,
     ExploratoryAnalysisResponse,
@@ -10,9 +18,17 @@ from app.api.schemas import (
 )
 from app.assessment.gemini import GeminiService
 from app.assessment.suitability import calculate_final_score
-from app.discovery.uci import UCIRepositoryError
+from app.discovery.uci import UCIRepositoryError, dataset_record_from_uci
 from app.profiling.profiler import DataProfiler
 from app.analysis.exploratory import ExploratoryAnalyzer
+from app.research.repository import (
+    get_dataset_profile,
+    save_dataset_profile,
+    upsert_dataset,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 class DatasetAnalysisService:
@@ -35,11 +51,16 @@ class DatasetAnalysisService:
         try:
             fetched = self.repository.fetch_dataset(numeric_id)
             self._data_cache[numeric_id] = fetched
-            _, dataframe, _ = fetched
-            profile = self.profiler.profile(
+            source_record, dataframe, source_metadata = fetched
+            source_version = self._source_version(dataframe, source_metadata)
+            profile = self._cached_or_profile(
+                numeric_id,
+                source_record,
+                source_version,
                 dataframe,
                 interpretation,
                 metadata.variable_descriptions,
+                warnings,
             )
         except Exception as error:
             response = DatasetAnalysisResponse(
@@ -72,6 +93,122 @@ class DatasetAnalysisService:
         )
         self._cache[key] = response
         return response
+
+    def _cached_or_profile(
+        self,
+        numeric_id: int,
+        source_record: object,
+        source_version: str,
+        dataframe: pd.DataFrame,
+        interpretation: ResearchInterpretation | None,
+        variable_descriptions: dict[str, str],
+        warnings: list[str],
+    ) -> DataProfile:
+        dataset_database_id: int | None = None
+        cached_profile: dict[str, Any] | None = None
+        try:
+            dataset_database_id = upsert_dataset(dataset_record_from_uci(source_record))
+            cached_profile = get_dataset_profile(
+                dataset_database_id,
+                source_version,
+                self.profiler.PROFILER_VERSION,
+            )
+        except Exception as error:
+            logger.warning(
+                "dataset_profile_cache event=unavailable dataset_id=%s",
+                numeric_id,
+            )
+            warnings.append(
+                "Persistent profile cache unavailable; computed profile was not cached."
+            )
+
+        if cached_profile is not None:
+            try:
+                profile = DataProfile.model_validate(cached_profile)
+                logger.info(
+                    "dataset_profile_cache event=hit dataset_id=%s",
+                    numeric_id,
+                )
+                return profile
+            except Exception:
+                logger.warning(
+                    "dataset_profile_cache event=invalid dataset_id=%s",
+                    numeric_id,
+                )
+
+        logger.info("dataset_profile_cache event=miss dataset_id=%s", numeric_id)
+        profile = self.profiler.profile(
+            dataframe,
+            interpretation,
+            variable_descriptions,
+        )
+        # Only a fully validated profile reaches persistence. Cache failures are
+        # non-fatal because the current analysis result is still trustworthy.
+        if dataset_database_id is not None:
+            try:
+                save_dataset_profile(
+                    dataset_database_id,
+                    source_version,
+                    self.profiler.PROFILER_VERSION,
+                    DataProfile.model_validate(profile),
+                )
+            except Exception:
+                logger.warning(
+                    "dataset_profile_cache event=save_failed dataset_id=%s",
+                    numeric_id,
+                )
+                warnings.append(
+                    "Persistent profile cache save failed; computed profile is available."
+                )
+        return profile
+
+    @staticmethod
+    def _source_version(
+        dataframe: pd.DataFrame, source_metadata: dict[str, Any]
+    ) -> str:
+        """Return a changing source revision, preferring provider revision fields.
+
+        UCI does not currently expose a stable ETag or Last-Modified value through
+        this adapter. The fallback is therefore a SHA-256 checksum of the fetched
+        metadata, column schema, and dataframe contents rather than a permanent
+        constant. A changed source dataset produces a different cache key.
+        """
+        for key in (
+            "etag",
+            "ETag",
+            "last_modified",
+            "Last-Modified",
+            "revision",
+            "version",
+            "updated_at",
+            "last_updated",
+        ):
+            value = source_metadata.get(key)
+            if value is not None and str(value).strip():
+                return f"{key}:{value}"
+
+        digest = hashlib.sha256()
+        digest.update(
+            json.dumps(
+                source_metadata,
+                sort_keys=True,
+                separators=(",", ":"),
+                default=str,
+            ).encode("utf-8")
+        )
+        digest.update(
+            json.dumps(
+                {"columns": [str(column) for column in dataframe.columns],
+                 "dtypes": [str(dtype) for dtype in dataframe.dtypes]},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+        try:
+            digest.update(pd.util.hash_pandas_object(dataframe, index=True).values.tobytes())
+        except (TypeError, ValueError):
+            digest.update(dataframe.to_csv(index=True).encode("utf-8"))
+        return f"sha256:{digest.hexdigest()}"
 
     def explore(
         self, dataset_id: str, request: ExploreRequest
