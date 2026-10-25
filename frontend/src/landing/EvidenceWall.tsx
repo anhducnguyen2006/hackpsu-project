@@ -1,3 +1,4 @@
+import { useThemeColor } from "../theme/theme";
 import { useEffect, useRef, useState } from 'react';
 import DriftWall from './react-bits/DriftWall';
 import { RESEARCH_EVIDENCE } from './researchEvidence';
@@ -11,6 +12,7 @@ const items = RESEARCH_EVIDENCE.map(source => ({
 }));
 
 export default function EvidenceWall() {
+  const overlayColor = useThemeColor("--color-cinema-bg");
   const section = useRef<HTMLElement>(null);
   const [visible, setVisible] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -50,12 +52,12 @@ export default function EvidenceWall() {
       <DriftWall items={items} columns={small ? 3 : 5} tileWidth={small ? 220 : 260}
         tileHeight={small ? 144 : 170} gap={18} tilt={16} turn={-14} perspective={1200}
         depth={120} speed={42} direction="up" variance={0.45} parallax={0.6}
-        lift={64} fade={0.6} dim={0.75} overlayColor="#060010" paused={!visible || paused} />
+        lift={64} fade={0.6} dim={0.75} overlayColor={overlayColor} paused={!visible || paused} />
     </div>
     <div className={styles.editorial}>
       <h2 id="evidence-title">Finding the right data shouldn't be the hardest part of research.</h2>
       <p>Across disciplines, researchers face scattered sources, incomplete metadata, and hours of preparation before analysis can even begin.</p>
-      <a className={styles.action} href="/">Explore research preview <span aria-hidden="true">↗</span></a>
+      <a className={styles.action} href="/dashboard">Explore research preview <span aria-hidden="true">↗</span></a>
     </div>
     <div className={styles.tools}>
       <button type="button" className={styles.pause} onClick={() => setPaused(value => !value)} aria-pressed={paused}>

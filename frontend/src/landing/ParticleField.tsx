@@ -1,9 +1,10 @@
 import { useMemo } from "react";
 import { createParticleConnections, createParticlePositions } from "./sceneModel";
-import { PALETTE } from "./palette";
+import { useLandingPalette } from "./palette";
 import { softenNearGeometry } from "./nearFade";
 
 export default function ParticleField({ mobile }: { mobile: boolean }) {
+  const PALETTE = useLandingPalette();
   const particles = useMemo(() => createParticlePositions(mobile ? 48 : 96), [mobile]);
   const connections = useMemo(() => createParticleConnections(particles, mobile ? 10 : 24, mobile ? 4.2 : 3), [particles, mobile]);
   return <>

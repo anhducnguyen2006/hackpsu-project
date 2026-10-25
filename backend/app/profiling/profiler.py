@@ -21,27 +21,37 @@ class DataProfiler:
     """Deterministic Pandas/NumPy profiling with conservative measurement labels."""
 
     # Bump when the profile algorithm or its serialized shape changes.
-    PROFILER_VERSION = "data-profiler-v1"
+    PROFILER_VERSION = "data-profiler-v4"
 
     def profile(
         self,
         dataframe: pd.DataFrame,
         interpretation: ResearchInterpretation | None = None,
         variable_descriptions: dict[str, str] | None = None,
+        variable_types: dict[str, str] | None = None,
     ) -> DataProfile:
-        columns = [self._column_profile(dataframe[name]) for name in dataframe.columns]
+        descriptions = variable_descriptions or {}
+        types = variable_types or {}
+        columns = [
+            self._column_profile(
+                dataframe[name],
+                descriptions.get(str(name)),
+                types.get(str(name)),
+            )
+            for name in dataframe.columns
+        ]
         evidence = (
-            self._research_evidence(dataframe, interpretation, variable_descriptions or {})
+            self._research_evidence(dataframe, interpretation, descriptions)
             if interpretation
             else []
         )
         roles: dict[str, set[str]] = {}
         if interpretation:
             for variable in interpretation.independent_variables:
-                for column in self._matched_columns(dataframe, variable, variable_descriptions or {}):
+                for column in self._matched_columns(dataframe, variable, descriptions):
                     roles.setdefault(column, set()).add("independent")
             for variable in interpretation.dependent_variables:
-                for column in self._matched_columns(dataframe, variable, variable_descriptions or {}):
+                for column in self._matched_columns(dataframe, variable, descriptions):
                     roles.setdefault(column, set()).add("outcome")
             for column in columns:
                 column.research_roles = sorted(roles.get(column.name, set()))
@@ -72,22 +82,40 @@ class DataProfiler:
             quality_flags=flags,
         )
 
-    def _column_profile(self, series: pd.Series) -> ColumnProfile:
+    def _column_profile(
+        self,
+        series: pd.Series,
+        variable_description: str | None = None,
+        declared_type: str | None = None,
+    ) -> ColumnProfile:
         nonmissing = series.dropna()
         unique_count = int(nonmissing.nunique())
         identifier_like = self._identifier_like(series)
         numeric = pd.api.types.is_numeric_dtype(series)
-        ordinal = numeric and unique_count <= 10 and not identifier_like
+        source_measurement_type = self._declared_measurement_type(declared_type)
         if identifier_like:
             measurement_type = "identifier_like"
-        elif ordinal:
-            measurement_type = "ordinal_or_encoded_numeric"
+        elif source_measurement_type is not None:
+            measurement_type = source_measurement_type
+        elif self._is_binary(series, variable_description):
+            measurement_type = "binary"
+        elif numeric and self._is_discrete_numeric(series) and unique_count <= 10 and self._ordinal_context(
+            str(series.name), variable_description
+        ):
+            measurement_type = "ordinal"
         elif numeric:
-            measurement_type = "numeric"
+            measurement_type = (
+                "discrete_numeric"
+                if self._is_discrete_numeric(series)
+                else "continuous"
+            )
         else:
             measurement_type = "categorical"
+        show_numeric_summary = measurement_type in {"continuous", "discrete_numeric"}
+        show_categories = measurement_type in {"binary", "ordinal", "categorical"}
         return ColumnProfile(
             name=str(series.name),
+            variable_description=variable_description,
             data_type=str(series.dtype),
             measurement_type=measurement_type,
             missing_count=int(series.isna().sum()),
@@ -95,13 +123,53 @@ class DataProfiler:
             unique_count=unique_count,
             is_constant=unique_count <= 1,
             is_near_empty=float(series.notna().mean()) < 0.10,
-            numeric_summary=self._numeric_summary(series) if numeric else None,
+            numeric_summary=self._numeric_summary(series) if show_numeric_summary else None,
             categorical_summary=(
                 self._categorical_summary(series)
-                if not numeric or ordinal
+                if show_categories
                 else []
             ),
         )
+
+    @staticmethod
+    def _declared_measurement_type(declared_type: str | None) -> str | None:
+        normalized = (declared_type or "").strip().lower().replace("-", "_")
+        return {
+            "binary": "binary",
+            "categorical": "categorical",
+            "integer": "discrete_numeric",
+            "continuous": "continuous",
+        }.get(normalized)
+
+    @staticmethod
+    def _is_binary(series: pd.Series, description: str | None) -> bool:
+        if pd.api.types.is_bool_dtype(series):
+            return True
+        text = (description or "").lower()
+        if re.search(r"\bbinary\b", text):
+            return True
+        nonmissing = series.dropna()
+        if pd.api.types.is_numeric_dtype(series):
+            return set(nonmissing.tolist()).issubset({0, 1})
+        return int(nonmissing.nunique()) == 2
+
+    @staticmethod
+    def _ordinal_context(name: str, description: str | None) -> bool:
+        """Identify numeric fields whose values represent ordered categories."""
+        text = f"{name} {description or ''}".lower()
+        if re.search(r"\b(age|year|height|weight|amount|quantity|count|duration)\b", text):
+            return False
+        return True
+
+    @staticmethod
+    def _is_discrete_numeric(series: pd.Series) -> bool:
+        """Identify quantitative values recorded only at whole-number increments."""
+        if pd.api.types.is_integer_dtype(series):
+            return True
+        numeric = pd.to_numeric(series.dropna(), errors="coerce")
+        if numeric.empty or numeric.isna().any():
+            return False
+        return bool(np.isclose(numeric, np.round(numeric)).all())
 
     def _matched_columns(
         self, dataframe: pd.DataFrame, variable: str, descriptions: dict[str, str]
@@ -163,7 +231,7 @@ class DataProfiler:
             notes = []
             if matches and all(
                 self._column_profile(dataframe[column]).measurement_type
-                == "ordinal_or_encoded_numeric"
+                == "ordinal"
                 for column in matches
             ):
                 notes.append(

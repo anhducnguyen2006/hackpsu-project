@@ -1,9 +1,10 @@
 import { useMemo } from "react";
 import { DoubleSide, Path, Shape } from "three";
 import { ANNULUS_INNER, ANNULUS_OUTER } from "./sceneModel";
-import { PALETTE } from "./palette";
+import { useLandingPalette } from "./palette";
 
 export default function SpatialAnnulus({ mobile }: { mobile: boolean }) {
+  const PALETTE = useLandingPalette();
   const shape = useMemo(() => {
     const disc = new Shape();
     disc.absarc(0, 0, ANNULUS_OUTER, 0, Math.PI * 2, false);

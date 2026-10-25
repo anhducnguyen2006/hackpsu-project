@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
@@ -8,6 +9,9 @@ import numpy as np
 import pandas as pd
 
 from app.api.schemas import DatasetRecord, DatasetVariable, UCIRecord
+from app.observability import timed_log
+
+logger = logging.getLogger(__name__)
 
 
 class UCIRepositoryError(RuntimeError):
@@ -33,6 +37,7 @@ def dataset_record_from_uci(record: UCIRecord) -> DatasetRecord:
             DatasetVariable(
                 name=variable,
                 description=record.variable_descriptions.get(variable),
+                data_type=record.variable_types.get(variable),
             )
             for variable in record.variables
         ],
@@ -79,6 +84,7 @@ class UCIRepositoryService:
             raise UCIRepositoryError(f"Unable to load the UCI catalog: {error}") from error
 
     def get_metadata(self, dataset_id: int) -> UCIRecord:
+        started = time.perf_counter()
         try:
             response = self.client.get(self.metadata_url, params={"id": dataset_id})
             response.raise_for_status()
@@ -86,8 +92,17 @@ class UCIRepositoryService:
             metadata = payload.get("data")
             if payload.get("status") != 200 or not isinstance(metadata, dict):
                 raise ValueError("Unexpected UCI dataset metadata response.")
-            return self._record_from_metadata(metadata)
+            record = self._record_from_metadata(metadata)
+            timed_log(logger, "uci_metadata_retrieval", started, dataset_id=dataset_id)
+            return record
         except Exception as error:
+            timed_log(
+                logger,
+                "uci_metadata_retrieval",
+                started,
+                status=type(error).__name__,
+                dataset_id=dataset_id,
+            )
             raise UCIRepositoryError(
                 f"Unable to load UCI metadata for dataset {dataset_id}: {error}"
             ) from error
@@ -101,8 +116,10 @@ class UCIRepositoryService:
             "profile": self._profile(dataframe),
         }
 
-    def fetch_dataset(self, dataset_id: int) -> tuple[UCIRecord, pd.DataFrame, dict[str, Any]]:
-        metadata_record = self.get_metadata(dataset_id)
+    def fetch_dataset(
+        self, dataset_id: int, metadata_record: UCIRecord | None = None
+    ) -> tuple[UCIRecord, pd.DataFrame, dict[str, Any]]:
+        metadata_record = metadata_record or self.get_metadata(dataset_id)
         if (
             metadata_record.instance_count is not None
             and metadata_record.instance_count > 100_000
@@ -116,12 +133,30 @@ class UCIRepositoryService:
         try:
             from ucimlrepo import fetch_ucirepo
 
+            download_started = time.perf_counter()
             repository_dataset = fetch_ucirepo(id=dataset_id)
+            timed_log(logger, "uci_table_download", download_started, dataset_id=dataset_id)
+            parse_started = time.perf_counter()
             metadata = self._metadata(repository_dataset)
             dataframe = self._original_dataframe(repository_dataset)
+            timed_log(
+                logger,
+                "dataframe_loading",
+                parse_started,
+                dataset_id=dataset_id,
+                rows=len(dataframe),
+                columns=len(dataframe.columns),
+            )
         except UCIRepositoryError:
             raise
         except Exception as error:
+            timed_log(
+                logger,
+                "uci_table_download",
+                download_started if "download_started" in locals() else time.perf_counter(),
+                status=type(error).__name__,
+                dataset_id=dataset_id,
+            )
             raise UCIRepositoryError(
                 f"Unable to fetch UCI dataset {dataset_id}: {error}"
             ) from error
@@ -158,6 +193,13 @@ class UCIRepositoryService:
             and variable.get("name")
             and variable.get("description")
         }
+        types = {
+            str(variable["name"]): str(variable.get("type", "")).strip()
+            for variable in variables
+            if isinstance(variable, dict)
+            and variable.get("name")
+            and variable.get("type")
+        }
         return UCIRecord(
             dataset_id=f"uci:{dataset_id}",
             title=str(metadata.get("name", f"UCI dataset {dataset_id}")),
@@ -169,6 +211,7 @@ class UCIRepositoryService:
             subject_area=metadata.get("area"),
             variables=variable_names,
             variable_descriptions=descriptions,
+            variable_types=types,
             instance_count=metadata.get("num_instances"),
             feature_count=metadata.get("num_features"),
             data_available=bool(metadata.get("data_url")),

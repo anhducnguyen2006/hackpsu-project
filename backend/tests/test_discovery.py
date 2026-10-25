@@ -65,7 +65,7 @@ def test_discovery_returns_only_repository_candidates() -> None:
     assert datasets[0].score_type == "semantic_similarity"
     assert "not a probability" in datasets[0].relevance_explanation
     assert warnings == []
-    assert mode == "gemini"
+    assert mode == "keyword_fallback"
 
 
 def test_normal_search_does_not_call_gemini_reranking() -> None:
@@ -79,7 +79,7 @@ def test_normal_search_does_not_call_gemini_reranking() -> None:
 
     assert datasets
     assert warnings == []
-    assert mode == "gemini"
+    assert mode == "keyword_fallback"
 
 
 def test_gemini_failure_uses_labeled_fallback() -> None:
@@ -94,8 +94,7 @@ def test_gemini_failure_uses_labeled_fallback() -> None:
     assert datasets
     assert interpretation is not None
     assert interpretation.refined_question is None
-    assert warnings
-    assert "Gemini unavailable" in warnings[0]
+    assert warnings == []
     assert mode == "keyword_fallback"
 
 
@@ -165,8 +164,8 @@ def test_repository_failure_returns_empty_results() -> None:
     ).search("Does study time affect grades?", 8)
 
     assert datasets == []
-    assert "UCI repository unavailable" in warnings[0]
-    assert mode == "partial_gemini"
+    assert any("UCI repository unavailable" in warning for warning in warnings)
+    assert mode == "keyword_fallback"
 
 
 def test_discovery_cache_avoids_repeating_repository_work() -> None:

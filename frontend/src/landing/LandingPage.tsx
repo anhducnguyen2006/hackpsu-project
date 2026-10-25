@@ -1,6 +1,6 @@
 import { Component, lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import StaticWorldPlate from "./StaticWorldPlate";
-import { paletteProperties } from "./palette";
+import { ThemeToggle } from "../components/ThemeToggle";
 import styles from "./LandingPage.module.css";
 import EvidenceWall from "./EvidenceWall";
 import { LANDING_DURATION } from "./storyTiming";
@@ -26,7 +26,7 @@ function DirectionIcon() {
   return <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false"><path d="M5 19 19 5M5 5h14v14" stroke="currentColor" strokeWidth="1.5" /></svg>;
 }
 
-export default function LandingPage() {
+export default function LandingPage({ authControls }: { authControls?: ReactNode }) {
   const root = useRef<HTMLDivElement>(null);
   const reducedMotion = useSyncExternalStore(subscribeMotion, motionSnapshot, () => true);
   const [ready, setReady] = useState(false);
@@ -37,13 +37,15 @@ export default function LandingPage() {
   useEffect(() => { if (reducedMotion) setReady(false); }, [reducedMotion]);
 
   const journeyMode = showCanvas ? (ready ? "active" : "loading") : "static";
-  const theme = { ...paletteProperties, "--landing-duration": LANDING_DURATION } as CSSProperties;
+  const theme = { "--landing-duration": LANDING_DURATION } as CSSProperties;
 
   return <div ref={root} className={styles.page} style={theme} data-landing-page="arrival" data-journey={journeyMode}>
     <header className={styles.header} data-landing-header data-landing-chrome>
-      <a className={styles.wordmark} href="/landing" aria-label="DataOPedia home">DataOPedia</a>
+      <a className={styles.wordmark} href="/" aria-label="DataOPedia home">DataOPedia</a>
       <span className={styles.headerNote}>A research instrument</span>
-      <a className={styles.headerLink} href="/">Research preview<DirectionIcon /></a>
+      <a className={styles.headerLink} href="/dashboard">Research preview<DirectionIcon /></a>
+      <ThemeToggle />
+      {authControls && <div className={styles.authControls}>{authControls}</div>}
     </header>
     <div className={styles.viewport}>
     <a className={styles.skipLink} href="#landing-main">Skip to content</a>
@@ -63,7 +65,7 @@ export default function LandingPage() {
         </div>
         <div className={styles.introduction}>
           <p data-flight-support>Discover public datasets.<br />See the evidence behind every possibility.</p>
-          <a className={styles.primaryLink} href="/">Open research preview<DirectionIcon /></a>
+          <a className={styles.primaryLink} href="/dashboard">Open research preview<DirectionIcon /></a>
           <span className={styles.previewNote} data-flight-support>Explore the cached UCI example</span>
         </div>
       </div>

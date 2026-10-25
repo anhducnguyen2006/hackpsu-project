@@ -109,6 +109,7 @@ class UCIRecord(BaseModel):
     subject_area: str | None = None
     variables: list[str] = []
     variable_descriptions: dict[str, str] = {}
+    variable_types: dict[str, str] = {}
     instance_count: int | None = None
     feature_count: int | None = None
     data_available: bool | None = None
@@ -456,10 +457,13 @@ class CategoryCount(BaseModel):
 
 class ColumnProfile(BaseModel):
     name: str
+    variable_description: str | None = None
     data_type: str
     measurement_type: Literal[
-        "numeric",
-        "ordinal_or_encoded_numeric",
+        "continuous",
+        "discrete_numeric",
+        "binary",
+        "ordinal",
         "categorical",
         "identifier_like",
     ]
@@ -574,8 +578,12 @@ class ExploratoryAnalysisResponse(BaseModel):
     dataset_id: str
     independent_variable: str
     outcome_variable: str
-    independent_measurement_type: Literal["ordinal_or_encoded_numeric", "categorical"]
-    outcome_measurement_type: Literal["numeric"]
+    independent_measurement_type: Literal[
+        "continuous", "discrete_numeric", "binary", "ordinal", "categorical"
+    ]
+    outcome_measurement_type: Literal[
+        "continuous", "discrete_numeric", "binary", "ordinal", "categorical"
+    ]
     categories: list[ExploratoryCategory]
     missing_independent_count: int
     missing_outcome_count: int

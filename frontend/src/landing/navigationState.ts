@@ -23,17 +23,19 @@ export function createNavigationDirection(initial: number, threshold = 12) {
   };
 }
 
-const rgb = (hex: string) => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+const rgb = (value: string) => value.startsWith('#')
+  ? [1, 3, 5].map(i => parseInt(value.slice(i, i + 2), 16))
+  : (value.match(/[\d.]+/g) ?? []).slice(0, 3).map(Number);
 function luminance(channels: number[]) {
   const linear = channels.map(v => { const c = v / 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); });
   return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
 }
-const ice = rgb(PALETTE.ice), dark = rgb(PALETTE.aubergine);
-const darkL = luminance(dark), lightL = luminance(rgb(PALETTE.paper));
-export function chromeInk(darkness: number) {
+export function chromeInk(darkness: number, palette: {ice: string; aubergine: string; paper: string} = PALETTE, endBackground = PALETTE.aubergine as string) {
+  const ice = rgb(palette.ice), dark = rgb(endBackground);
+  const darkL = luminance(rgb(palette.aubergine)), lightL = luminance(rgb(palette.paper));
   const mix = Math.max(0, Math.min(1, darkness));
   const backgroundL = luminance(ice.map((v, i) => v + (dark[i] - v) * mix));
-  const darkContrast = (backgroundL + 0.05) / (darkL + 0.05);
-  const paperContrast = (lightL + 0.05) / (backgroundL + 0.05);
-  return darkContrast >= paperContrast ? PALETTE.aubergine : PALETTE.paper;
+  const darkContrast = (Math.max(backgroundL, darkL) + 0.05) / (Math.min(backgroundL, darkL) + 0.05);
+  const paperContrast = (Math.max(backgroundL, lightL) + 0.05) / (Math.min(backgroundL, lightL) + 0.05);
+  return darkContrast >= paperContrast ? palette.aubergine : palette.paper;
 }
