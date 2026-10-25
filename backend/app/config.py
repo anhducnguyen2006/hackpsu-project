@@ -10,10 +10,18 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     google_api_key: str | None = None
     gemini_model: str = "gemini-2.5-flash"
+    gemini_interpret_thinking_level: str = "low"
     backend_cors_origins: str = "http://localhost:5173"
     uci_catalog_ttl_seconds: int = 900
     external_request_timeout_seconds: float = 12.0
     gemini_request_timeout_ms: int = 15000
+    gemini_retry_attempts: int = 1
+    # Empty by default: enable only after a bounded model benchmark succeeds.
+    gemini_fallback_model: str | None = None
+    gemini_overall_timeout_ms: int = 16000
+    gemini_fallback_reserve_ms: int = 6000
+    gemini_provider_min_timeout_ms: int = 10000
+    uci_data_cache_ttl_seconds: int = 900
     discovery_source_concurrency: int = 3
     discovery_candidate_limit: int = 12
     embedding_model_name: str = "BAAI/bge-small-en-v1.5"

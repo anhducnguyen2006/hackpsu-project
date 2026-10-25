@@ -1,3 +1,6 @@
+import logging
+import time
+
 from fastapi import APIRouter, HTTPException
 
 from app.api.schemas import (
@@ -11,6 +14,9 @@ from app.assessment.gemini import GeminiService
 from app.config import settings
 from app.demo import demo_analysis, demo_exploration
 from app.discovery.uci import UCIRepositoryError, UCIRepositoryService
+from app.observability import timed_log
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/dev", tags=["development"])
 adapter = UCIRepositoryService(catalog_ttl=settings.uci_catalog_ttl_seconds)
@@ -33,14 +39,32 @@ analysis_router = APIRouter(prefix="/datasets", tags=["datasets"])
 def analyze_dataset(
     dataset_id: str, request: AnalysisRequest
 ) -> DatasetAnalysisResponse:
+    started = time.perf_counter()
     if settings.demo_mode and dataset_id == "uci:320":
-        return demo_analysis()
+        response = demo_analysis()
+        timed_log(logger, "analysis_http_request", started, status="demo", dataset_id=dataset_id)
+        return response
     try:
-        return analysis_service.analyze(dataset_id, request)
+        response = analysis_service.analyze(dataset_id, request)
+        timed_log(
+            logger,
+            "analysis_http_request",
+            started,
+            status="ok",
+            dataset_id=dataset_id,
+            data_status=response.data_status,
+            assessment=response.ai_assessment_status,
+        )
+        return response
     except ValueError as error:
+        timed_log(logger, "analysis_http_request", started, status="validation_error", dataset_id=dataset_id)
         raise HTTPException(status_code=400, detail=str(error)) from error
     except UCIRepositoryError as error:
+        timed_log(logger, "analysis_http_request", started, status="uci_error", dataset_id=dataset_id)
         raise HTTPException(status_code=502, detail=str(error)) from error
+    except Exception as error:
+        timed_log(logger, "analysis_http_request", started, status=type(error).__name__, dataset_id=dataset_id)
+        raise
 
 
 @analysis_router.post(

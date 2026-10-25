@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import logging
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -76,8 +77,11 @@ class DiscoveryService:
         self.providers = list(providers or [])
         self.embedding_service = embedding_service or EmbeddingService()
         self._cache: dict[tuple[str, int], tuple[float, tuple]] = {}
+        self._external_cache: dict[tuple[str, str], tuple[float, tuple[DatasetRecord, ...]]] = {}
+        self._external_cache_lock = threading.Lock()
         self._graph_records: dict[tuple[str, int], tuple[float, ResearchInterpretation | None, tuple[DatasetRecord, ...]]] = {}
         self.cache_ttl_seconds = 300
+        self.external_cache_ttl_seconds = 120
 
     def graph_for_search(self, question: str, limit: int):
         """Return a graph for server-cached normalized records, populating the cache via search if needed."""
@@ -131,17 +135,19 @@ class DiscoveryService:
             logger.info("discovery stage=cache_hit elapsed_ms=%.1f", (time.perf_counter() - started) * 1000)
             return cached[1]
         warnings: list[str] = []
-        interpretation_failed = False
+        interpretation_failed = True
         stage_started = time.perf_counter()
-        try:
-            interpretation = self.gemini.interpret(question)
-        except Exception as error:
-            interpretation = self._fallback_interpretation(question)
-            interpretation_failed = True
-            warnings.append(
-                f"Gemini unavailable; used deterministic interpretation fallback: "
-                f"{self._safe_error(error)}"
-            )
+        # Gemini interpretation is intentionally disabled. Keep the call commented
+        # out so discovery always uses the deterministic, local interpretation.
+        # try:
+        #     interpretation = self.gemini.interpret(question)
+        # except Exception as error:
+        #     interpretation = self._fallback_interpretation(question)
+        #     warnings.append(
+        #         f"Gemini unavailable; used deterministic interpretation fallback: "
+        #         f"{self._safe_error(error)}"
+        #     )
+        interpretation = self._fallback_interpretation(question)
         logger.info("discovery stage=interpretation elapsed_ms=%.1f", (time.perf_counter() - stage_started) * 1000)
 
         stage_started = time.perf_counter()
@@ -233,30 +239,51 @@ class DiscoveryService:
     ) -> list[DatasetRecord]:
         if not self.providers:
             return []
-        queries = list(dict.fromkeys(concept.query for concept in concepts if concept.query))
-        queries = queries[: max(1, settings.discovery_candidate_limit)]
+        query = self._build_external_query(concepts)
+        if not query:
+            return []
         records: list[DatasetRecord] = []
         records_by_source: dict[str, list[DatasetRecord]] = {
             provider.source: [] for provider in self.providers
         }
-        workers = min(
-            max(1, settings.discovery_source_concurrency),
-            len(self.providers) * max(1, len(queries)),
-        )
+        pending: list[DiscoveryProvider] = []
+        for provider in self.providers:
+            cache_key = (provider.source, query)
+            with self._external_cache_lock:
+                cached = self._external_cache.get(cache_key)
+                if cached and time.monotonic() - cached[0] < self.external_cache_ttl_seconds:
+                    records_by_source[provider.source].extend(cached[1])
+                    continue
+            pending.append(provider)
+
+        if not pending:
+            return self._external_records_by_source(records_by_source)
+
+        workers = min(max(1, settings.discovery_source_concurrency), len(pending))
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = {
-                executor.submit(provider.search, [query]): (provider, query)
-                for provider in self.providers
-                for query in queries
+                executor.submit(provider.search, [query]): provider
+                for provider in pending
             }
             for future in as_completed(futures):
-                provider, query = futures[future]
+                provider = futures[future]
                 try:
-                    records_by_source[provider.source].extend(future.result())
+                    provider_records = tuple(future.result())
+                    records_by_source[provider.source].extend(provider_records)
+                    with self._external_cache_lock:
+                        self._external_cache[(provider.source, query)] = (
+                            time.monotonic(), provider_records
+                        )
                 except Exception as error:
                     warnings.append(
                         f"{provider.source} unavailable for query '{query}': {self._safe_error(error)}"
                     )
+        return self._external_records_by_source(records_by_source)
+
+    def _external_records_by_source(
+        self, records_by_source: dict[str, list[DatasetRecord]]
+    ) -> list[DatasetRecord]:
+        records: list[DatasetRecord] = []
         for provider in self.providers:
             source_records = records_by_source[provider.source]
             source_limit = getattr(
@@ -264,6 +291,37 @@ class DiscoveryService:
             )
             records.extend(source_records[:source_limit])
         return records
+
+    @classmethod
+    def _build_external_query(cls, concepts: list[SearchConcept]) -> str:
+        """Create one compact repository query from the interpreted concepts.
+
+        External providers are supplemental sources. Sending every concept as a
+        separate request multiplied latency by ``providers * concepts`` and made
+        a slow provider dominate the request. One bounded query preserves the
+        broad intent while keeping the fan-out to one request per provider.
+        """
+        preferred_types = {
+            "search_term",
+            "independent_variable",
+            "dependent_variable",
+            "research_subject",
+            "population_or_geography",
+        }
+        tokens: list[str] = []
+        seen: set[str] = set()
+        for concept in concepts:
+            if concept.concept_type not in preferred_types:
+                continue
+            for token in re.findall(r"[a-z0-9]+", concept.query.lower()):
+                if len(token) <= 2 or token in STOP_WORDS or token in GENERIC_TERMS:
+                    continue
+                if token not in seen:
+                    seen.add(token)
+                    tokens.append(token)
+                if len(tokens) >= 12:
+                    return " ".join(tokens)
+        return " ".join(tokens)
 
     @staticmethod
     def _build_concepts(interpretation: ResearchInterpretation) -> list[SearchConcept]:

@@ -2,9 +2,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.requests import Request
 
 from app.api.routes import datasets, discovery, health, research
 from app.config import settings
+from app.observability import new_request_id, reset_request_id, set_request_id
 from database.connection import close_database, open_database
 
 
@@ -29,6 +31,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def request_correlation(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or new_request_id()
+    token = set_request_id(request_id)
+    try:
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+    finally:
+        reset_request_id(token)
 
 app.include_router(health.router, prefix="/api/v1")
 app.include_router(datasets.router, prefix="/api/v1")
