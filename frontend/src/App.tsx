@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { ResearchQuestion } from "./components/ResearchQuestion";
 import { EXAMPLE_QUESTION } from "./demo/researchExample";
+import { EXAMPLE_INTERPRETATION } from "./demo/researchExample";
+import { InterpretationSheet } from "./components/InterpretationSheet";
 
 export type PreviewStage = "question" | "interpretation" | "datasets" | "graph" | "analysis";
 const stages: { key: PreviewStage; label: string }[] = [
@@ -18,7 +20,7 @@ function App() {
         {stages.map(({ key, label }, index) => <button type="button" key={key} aria-current={stage === key ? "page" : undefined} onClick={() => setStage(key)}><span className="nav-index" aria-hidden="true">0{index + 1}</span>{label}</button>)}
       </nav>
     </header>
-    <main id="main-content" className="stage-main">{stage === "question" ? <ResearchQuestion exampleQuestion={EXAMPLE_QUESTION} onExploreExample={() => setStage("interpretation")} /> : <h1>{stages.find((item) => item.key === stage)?.label}</h1>}</main>
+    <main id="main-content" className="stage-main">{stage === "question" ? <ResearchQuestion exampleQuestion={EXAMPLE_QUESTION} onExploreExample={() => setStage("interpretation")} /> : stage === "interpretation" ? <><InterpretationSheet interpretation={EXAMPLE_INTERPRETATION} processingMode="keyword_fallback" /><button type="button" className="secondary-action back-action" onClick={() => setStage("question")}>Revise question</button></> : <h1>{stages.find((item) => item.key === stage)?.label}</h1>}</main>
     <footer className="site-footer">DataOPedia / Research instrument · Cached UCI example</footer>
   </div>;
 }
