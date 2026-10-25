@@ -165,10 +165,23 @@ def test_analysis_is_cached_and_score_is_python_recomputed() -> None:
 
     assert first.model_dump() == second.model_dump()
     assert repository.fetch_calls == 1
-    assert gemini.interpret_calls == 1
+    assert gemini.interpret_calls == 0
     assert gemini.assessment_calls == 1
     assert first.assessment is not None
     assert first.assessment.final_score == 80
+
+
+def test_analysis_reuses_fetched_dataset_and_profile_for_changed_question() -> None:
+    repository = FakeRepository()
+    service = DatasetAnalysisService(repository, FakeGemini())
+
+    service.analyze("uci:320", AnalysisRequest(research_question="Does study time affect grades?"))
+    service.analyze(
+        "uci:320",
+        AnalysisRequest(research_question="Does weekly study time affect academic performance?"),
+    )
+
+    assert repository.fetch_calls == 1
 
 
 def test_demo_analysis_reports_only_verified_statistics() -> None:

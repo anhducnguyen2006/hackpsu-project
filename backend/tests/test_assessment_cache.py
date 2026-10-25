@@ -11,6 +11,7 @@ from app.api.schemas import (
     UCIRecord,
 )
 from app.analysis.service import DatasetAnalysisService
+from app.assessment.gemini import GeminiUnavailableError
 
 
 def _interpretation(question: str) -> ResearchInterpretation:
@@ -215,3 +216,26 @@ def test_invalid_gemini_assessment_is_not_cached(monkeypatch) -> None:
     assert response.assessment is None
     assert cache == {}
     assert any("AI suitability assessment unavailable" in warning for warning in response.warnings)
+
+
+def test_transient_unavailable_assessment_is_not_cached_for_retry(monkeypatch) -> None:
+    _patch_profile_storage(monkeypatch)
+    cache: dict[str, dict] = {}
+    _patch_assessment_storage(monkeypatch, cache)
+
+    class TransientGemini(FakeGemini):
+        def assess_suitability(self, *args, **kwargs):
+            self.assessment_calls += 1
+            raise GeminiUnavailableError(
+                "temporary provider failure",
+                category="temporary service unavailability",
+            )
+
+    service = DatasetAnalysisService(FakeRepository(), TransientGemini())
+    first = service.analyze("uci:320", _request())
+    second = service.analyze("uci:320", _request())
+
+    assert first.assessment is None
+    assert second.assessment is None
+    assert service.gemini.assessment_calls == 2
+    assert cache == {}

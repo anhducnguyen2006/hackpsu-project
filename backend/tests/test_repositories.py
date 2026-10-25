@@ -306,7 +306,7 @@ def test_multiple_sources_are_aggregated_and_terms_are_forwarded() -> None:
     assert len(dataverse.queries) == 1
     assert len(zenodo.queries) == 1
     assert warnings == []
-    assert mode == "gemini"
+    assert mode == "keyword_fallback"
 
 
 def test_external_provider_results_are_cached_for_repeated_searches() -> None:
@@ -366,4 +366,4 @@ def test_empty_external_results_preserve_empty_result_behavior() -> None:
 
     assert datasets
     assert warnings == []
-    assert mode == "gemini"
+    assert mode == "keyword_fallback"
