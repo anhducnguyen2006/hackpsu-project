@@ -51,8 +51,8 @@ const numeric = (count: number, mean: number, median: number, standard_deviation
   ({ count, mean, median, standard_deviation, minimum, percentile_25, percentile_75, maximum });
 
 const columns: ColumnProfile[] = [
-  { name: "studytime", data_type: "int64", measurement_type: "ordinal_or_encoded_numeric", missing_count: 0, missing_fraction: 0, unique_count: 4, is_constant: false, is_near_empty: false, research_roles: ["independent"], numeric_summary: numeric(649, 1.9306625577812018, 2, 0.829509574636615, 1, 1, 2, 4), categorical_summary: [{ value: 2, count: 305 }, { value: 1, count: 212 }, { value: 3, count: 97 }, { value: 4, count: 35 }] },
-  { name: "G3", data_type: "int64", measurement_type: "numeric", missing_count: 0, missing_fraction: 0, unique_count: 18, is_constant: false, is_near_empty: false, research_roles: ["outcome"], numeric_summary: numeric(649, 11.906009244992296, 12, 3.230656242804805, 0, 10, 14, 19), categorical_summary: [] },
+  { name: "studytime", variable_description: "weekly study time", data_type: "int64", measurement_type: "ordinal", missing_count: 0, missing_fraction: 0, unique_count: 4, is_constant: false, is_near_empty: false, research_roles: ["independent"], numeric_summary: null, categorical_summary: [{ value: 2, count: 305 }, { value: 1, count: 212 }, { value: 3, count: 97 }, { value: 4, count: 35 }] },
+  { name: "G3", variable_description: "final grade", data_type: "int64", measurement_type: "discrete_numeric", missing_count: 0, missing_fraction: 0, unique_count: 18, is_constant: false, is_near_empty: false, research_roles: ["outcome"], numeric_summary: numeric(649, 11.906009244992296, 12, 3.230656242804805, 0, 10, 14, 19), categorical_summary: [] },
 ];
 
 const criterion = { score: null, explanation: "Unavailable: no verifiable cached AI assessment is present." };
@@ -90,7 +90,7 @@ export const EXAMPLE_ANALYSIS: DatasetAnalysisResponse = {
 
 export const EXAMPLE_EXPLORATION: ExploratoryAnalysisResponse = {
   dataset_id: "uci:320", independent_variable: "studytime", outcome_variable: "G3",
-  independent_measurement_type: "ordinal_or_encoded_numeric", outcome_measurement_type: "numeric",
+  independent_measurement_type: "ordinal", outcome_measurement_type: "discrete_numeric",
   categories: [
     { category: 1, observations: 212, mean_outcome: 10.84433962264151, median_outcome: 11, standard_deviation: 3.218624126547874 },
     { category: 2, observations: 305, mean_outcome: 12.091803278688525, median_outcome: 12, standard_deviation: 3.243125070719802 },

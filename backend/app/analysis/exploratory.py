@@ -66,11 +66,17 @@ class ExploratoryAnalyzer:
             independent_variable=independent_variable,
             outcome_variable=outcome_variable,
             independent_measurement_type=(
-                "ordinal_or_encoded_numeric"
+                "binary"
+                if independent.nunique(dropna=True) == 2
+                else "ordinal"
                 if pd.api.types.is_numeric_dtype(independent)
                 else "categorical"
             ),
-            outcome_measurement_type="numeric",
+            outcome_measurement_type=(
+                "binary"
+                if outcome.nunique(dropna=True) == 2
+                else "continuous"
+            ),
             categories=categories,
             missing_independent_count=int(independent.isna().sum()),
             missing_outcome_count=int(outcome.isna().sum()),
@@ -78,7 +84,7 @@ class ExploratoryAnalyzer:
             analyzed_observation_count=int(valid.sum()),
             limitations=[
                 "These are descriptive group summaries, not a causal analysis.",
-                "Encoded ordinal categories are displayed as groups; their numeric codes are not treated as exact units.",
+                "Binary and ordinal categories are displayed as groups; their numeric codes are not treated as exact units.",
                 "Observed records may not represent independent participants, and no statistical significance or power claim is made.",
             ],
         )

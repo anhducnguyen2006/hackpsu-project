@@ -107,7 +107,8 @@ def test_profile_marks_ordinal_values_and_matches_verified_columns() -> None:
         {"studytime": "weekly study time", "G3": "final grade"},
     )
     studytime = next(column for column in profile.columns if column.name == "studytime")
-    assert studytime.measurement_type == "ordinal_or_encoded_numeric"
+    assert studytime.measurement_type == "ordinal"
+    assert studytime.numeric_summary is None
     assert [(item.value, item.count) for item in studytime.categorical_summary] == [
         (1, 1),
         (2, 1),
@@ -120,6 +121,37 @@ def test_profile_marks_ordinal_values_and_matches_verified_columns() -> None:
         and item.matched_columns == ["studytime"]
         for item in profile.research_variable_evidence
     )
+
+
+def test_profile_marks_integer_quantities_as_discrete_numeric() -> None:
+    profile = DataProfiler().profile(
+        pd.DataFrame({"age": [45, 52, 60, None], "creatinine": [1.2, 1.4, 1.8, 2.1]}),
+        variable_descriptions={"age": "age of the patient", "creatinine": "serum creatinine"},
+    )
+
+    age = next(column for column in profile.columns if column.name == "age")
+    creatinine = next(column for column in profile.columns if column.name == "creatinine")
+
+    assert age.measurement_type == "discrete_numeric"
+    assert age.numeric_summary is not None
+    assert creatinine.measurement_type == "continuous"
+
+
+def test_profile_preserves_declared_categorical_measurement() -> None:
+    profile = DataProfiler().profile(
+        pd.DataFrame({"chest-pain": [1, 2, 3, 4], "ecg": [0, 1, 2, 2]}),
+        variable_descriptions={
+            "chest-pain": "chest pain type",
+            "ecg": "resting electrocardiographic results",
+        },
+        variable_types={"chest-pain": "Categorical", "ecg": "Categorical"},
+    )
+
+    assert [column.measurement_type for column in profile.columns] == [
+        "categorical",
+        "categorical",
+    ]
+    assert all(column.numeric_summary is None for column in profile.columns)
 
 
 def test_analysis_is_cached_and_score_is_python_recomputed() -> None:
@@ -211,7 +243,7 @@ def test_exploratory_analysis_computes_ordinal_group_statistics() -> None:
         "studytime",
         "G3",
     )
-    assert response.independent_measurement_type == "ordinal_or_encoded_numeric"
+    assert response.independent_measurement_type == "ordinal"
     assert response.analyzed_observation_count == 5
     assert response.excluded_observation_count == 1
     assert [(item.category, item.observations, item.mean_outcome) for item in response.categories] == [

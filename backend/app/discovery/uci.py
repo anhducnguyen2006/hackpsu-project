@@ -33,6 +33,7 @@ def dataset_record_from_uci(record: UCIRecord) -> DatasetRecord:
             DatasetVariable(
                 name=variable,
                 description=record.variable_descriptions.get(variable),
+                data_type=record.variable_types.get(variable),
             )
             for variable in record.variables
         ],
@@ -158,6 +159,13 @@ class UCIRepositoryService:
             and variable.get("name")
             and variable.get("description")
         }
+        types = {
+            str(variable["name"]): str(variable.get("type", "")).strip()
+            for variable in variables
+            if isinstance(variable, dict)
+            and variable.get("name")
+            and variable.get("type")
+        }
         return UCIRecord(
             dataset_id=f"uci:{dataset_id}",
             title=str(metadata.get("name", f"UCI dataset {dataset_id}")),
@@ -169,6 +177,7 @@ class UCIRepositoryService:
             subject_area=metadata.get("area"),
             variables=variable_names,
             variable_descriptions=descriptions,
+            variable_types=types,
             instance_count=metadata.get("num_instances"),
             feature_count=metadata.get("num_features"),
             data_available=bool(metadata.get("data_url")),
