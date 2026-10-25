@@ -4,11 +4,16 @@ export const EXAMPLE_QUESTION = "How is study time associated with academic perf
 
 export const EXAMPLE_INTERPRETATION: ResearchInterpretation = {
   original_research_question: EXAMPLE_QUESTION,
+  refined_question: "What is the association between study time and academic performance among students?",
   research_subject: "student academic performance",
   independent_variables: ["study time"],
   dependent_variables: ["academic performance"],
   target_population: "students",
+  population: "students",
+  geographic_scope: null,
+  temporal_scope: null,
   synonyms: ["grades"],
+  assumptions_or_ambiguities: [],
   search_terms: ["student", "studytime", "performance"],
 };
 

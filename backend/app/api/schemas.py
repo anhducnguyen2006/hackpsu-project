@@ -13,12 +13,26 @@ class DiscoveryRequest(BaseModel):
 
 class ResearchInterpretation(BaseModel):
     original_research_question: str
+    refined_question: str | None = None
     research_subject: str
     independent_variables: list[str]
     dependent_variables: list[str]
+    # target_population is retained for API compatibility with existing clients.
     target_population: str | None = None
+    population: str | None = None
+    geographic_scope: str | None = None
+    temporal_scope: str | None = None
     synonyms: list[str]
+    assumptions_or_ambiguities: list[str] = Field(default_factory=list)
     search_terms: list[str] = Field(min_length=3, max_length=5)
+
+    @model_validator(mode="after")
+    def synchronize_population_fields(self) -> "ResearchInterpretation":
+        if self.population is None:
+            self.population = self.target_population
+        if self.target_population is None:
+            self.target_population = self.population
+        return self
 
 
 class UCIRecord(BaseModel):

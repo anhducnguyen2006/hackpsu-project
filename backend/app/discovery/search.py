@@ -271,6 +271,8 @@ class DiscoveryService:
         concepts: list[SearchConcept] = [
             SearchConcept("full_question", "full_question", interpretation.original_research_question),
         ]
+        if interpretation.refined_question and interpretation.refined_question.strip():
+            concepts.append(SearchConcept("refined_question", "full_question", interpretation.refined_question))
         if interpretation.research_subject.strip():
             concepts.append(SearchConcept("research_subject", "research_subject", interpretation.research_subject))
         for index, value in enumerate(interpretation.independent_variables):
@@ -643,6 +645,7 @@ class DiscoveryService:
                 terms.append("research")
             return ResearchInterpretation(
                 original_research_question=question,
+                refined_question=None,
                 research_subject=dependent or independent,
                 independent_variables=[independent] if independent else [],
                 dependent_variables=[dependent] if dependent else [],
@@ -665,6 +668,7 @@ class DiscoveryService:
             terms.append("research")
         return ResearchInterpretation(
             original_research_question=question,
+            refined_question=None,
             research_subject=" ".join(meaningful[:4]) or "unspecified research topic",
             independent_variables=meaningful[:2],
             dependent_variables=meaningful[2:4],

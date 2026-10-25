@@ -87,11 +87,13 @@ def test_gemini_failure_uses_labeled_fallback() -> None:
         def interpret(self, question: str):
             raise RuntimeError("invalid API key")
 
-    _, datasets, warnings, mode = DiscoveryService(
+    interpretation, datasets, warnings, mode = DiscoveryService(
         FakeRepository(), BrokenGemini(), embedding_service=FakeEmbedding()
     ).search("Does study time affect grades?", 8)
 
     assert datasets
+    assert interpretation is not None
+    assert interpretation.refined_question is None
     assert warnings
     assert "Gemini unavailable" in warnings[0]
     assert mode == "keyword_fallback"
@@ -105,6 +107,23 @@ def test_fallback_interpretation_preserves_affect_and_geography_structure() -> N
     assert interpretation.independent_variables == ["rainfall"]
     assert interpretation.dependent_variables == ["crop production"]
     assert interpretation.target_population == "Nepal"
+
+
+def test_search_concepts_keep_original_and_refined_questions() -> None:
+    interpretation = ResearchInterpretation(
+        original_research_question="Does pollution affect health?",
+        refined_question="What is the relationship between pollution exposure and health outcomes?",
+        research_subject="pollution and health",
+        independent_variables=["pollution exposure"],
+        dependent_variables=["health outcomes"],
+        synonyms=["environmental exposure"],
+        search_terms=["pollution", "exposure", "health"],
+    )
+    concepts = DiscoveryService._build_concepts(interpretation)
+    assert [concept.text for concept in concepts[:2]] == [
+        interpretation.original_research_question,
+        interpretation.refined_question,
+    ]
 
 
 def test_repository_failure_returns_empty_results() -> None:
