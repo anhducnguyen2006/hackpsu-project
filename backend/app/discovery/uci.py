@@ -38,6 +38,11 @@ def dataset_record_from_uci(record: UCIRecord) -> DatasetRecord:
         ],
         subjects=[record.subject_area] if record.subject_area else [],
         data_available=record.data_available,
+        analysis_eligibility=(
+            "supported_resource_verified"
+            if record.data_available is not False
+            else "verification_failed"
+        ),
     )
 
 

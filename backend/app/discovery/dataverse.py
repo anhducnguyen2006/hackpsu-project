@@ -81,6 +81,25 @@ class HarvardDataverseService:
                 )
         return records
 
+    def verify_analyzable(self, record: DatasetRecord) -> DatasetRecord | None:
+        """Resolve published files through the analysis adapter without downloading."""
+        from app.analysis.source_providers import DataverseAnalysisProvider, SourceProviderError
+
+        try:
+            provider = DataverseAnalysisProvider(client=self.client)
+            verified = provider.resolve(record.id)
+            resources = provider.resources(verified)
+        except SourceProviderError:
+            return None
+        if not resources:
+            return None
+        return verified.model_copy(
+            update={
+                "data_available": True,
+                "analysis_eligibility": "supported_resource_verified",
+            }
+        )
+
     @classmethod
     def _record_from_item(cls, item: dict[str, Any]) -> DatasetRecord:
         if item.get("type") not in (None, "dataset"):

@@ -166,6 +166,10 @@ class DiscoveryService:
             [dataset_record_from_uci(record) for record in uci_records]
             + external_records
         )
+        records = [
+            record for record in records
+            if self._has_relevance_evidence(record, concepts)
+        ]
         logger.info(
             "discovery stage=aggregation elapsed_ms=%.1f records=%d",
             (time.perf_counter() - stage_started) * 1000,
@@ -258,12 +262,49 @@ class DiscoveryService:
                         f"{provider.source} unavailable for query '{query}': {self._safe_error(error)}"
                     )
         for provider in self.providers:
-            source_records = records_by_source[provider.source]
+            source_records = self._verify_external_records(
+                provider,
+                records_by_source[provider.source],
+                warnings,
+            )
             source_limit = getattr(
                 provider, "default_limit", settings.discovery_candidate_limit
             )
             records.extend(source_records[:source_limit])
         return records
+
+    def _verify_external_records(
+        self,
+        provider: DiscoveryProvider,
+        records: list[DatasetRecord],
+        warnings: list[str],
+    ) -> list[DatasetRecord]:
+        verifier = getattr(provider, "verify_analyzable", None)
+        if not callable(verifier):
+            return records
+        unique = list({record.id: record for record in records}.values())
+        bounded = unique[: settings.discovery_candidate_limit]
+        verified: list[DatasetRecord] = []
+        with ThreadPoolExecutor(
+            max_workers=min(
+                max(1, settings.discovery_source_concurrency),
+                max(1, len(bounded)),
+            )
+        ) as executor:
+            futures = {executor.submit(verifier, record): record for record in bounded}
+            for future in as_completed(futures):
+                record = futures[future]
+                try:
+                    verified_record = future.result()
+                except Exception as error:
+                    warnings.append(
+                        f"{provider.source} eligibility verification failed for "
+                        f"{record.id}: {self._safe_error(error)}"
+                    )
+                    continue
+                if verified_record is not None:
+                    verified.append(verified_record)
+        return verified
 
     @staticmethod
     def _build_concepts(interpretation: ResearchInterpretation) -> list[SearchConcept]:
@@ -572,7 +613,27 @@ class DiscoveryService:
             "temporal_coverage": record.temporal_coverage,
             "doi": record.doi,
             "license": record.license,
+            "analysis_eligibility": record.analysis_eligibility,
         }
+
+    @classmethod
+    def _has_relevance_evidence(
+        cls, record: DatasetRecord, concepts: list[SearchConcept]
+    ) -> bool:
+        record_tokens = cls._record_tokens(record)
+        relevant_types = {
+            "full_question",
+            "independent_variable",
+            "dependent_variable",
+            "research_subject",
+        }
+        for concept in concepts:
+            if concept.concept_type not in relevant_types:
+                continue
+            concept_tokens = cls._tokens([concept.text]) - GENERIC_TERMS - STOP_WORDS
+            if concept_tokens & record_tokens:
+                return True
+        return False
 
     @staticmethod
     def _record_tokens(record: DatasetRecord) -> set[str]:

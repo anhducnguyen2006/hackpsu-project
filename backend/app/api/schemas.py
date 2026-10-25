@@ -118,6 +118,14 @@ class DatasetRecord(BaseModel):
     doi: str | None = None
     license: str | None = None
     data_available: bool | None = None
+    analysis_eligibility: Literal[
+        "supported_resource_verified",
+        "download_verified",
+        "unsupported",
+        "restricted",
+        "verification_failed",
+        "unverified",
+    ] = "unverified"
 
     @field_validator("id")
     @classmethod
@@ -243,6 +251,14 @@ class DatasetResult(UCIRecord):
     matched_research_variables: list[str] = []
     missing_or_unverified_variables: list[str] = []
     classification: Literal["relevant", "partially_relevant", "irrelevant"] = "partially_relevant"
+    analysis_eligibility: Literal[
+        "supported_resource_verified",
+        "download_verified",
+        "unsupported",
+        "restricted",
+        "verification_failed",
+        "unverified",
+    ] = "unverified"
 
 
 class DiscoveryResponse(BaseModel):

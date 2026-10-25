@@ -57,6 +57,7 @@ it("renders the live interpretation and discovery response", async () => {
         dependent_variables: ["crop yield"],
         target_population: "farms",
         synonyms: ["precipitation"],
+        assumptions_or_ambiguities: [],
         search_terms: ["rainfall", "crop", "yield"],
       },
       datasets: [{

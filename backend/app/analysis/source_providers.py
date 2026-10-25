@@ -318,7 +318,7 @@ class DataverseAnalysisProvider:
             id=f"dataverse:{source_id}",
             source=self.source,
             source_id=source_id,
-            title=str(data.get("title") or "").strip(),
+            title=str(data.get("name") or data.get("title") or "").strip(),
             description=self._text(data.get("description")),
             landing_page_url=self._text(
                 data.get("persistentUrl")
@@ -350,7 +350,15 @@ class DataverseAnalysisProvider:
                 continue
             format_name = self._format(filename, data_file.get("contentType"))
             restricted = bool(item.get("restricted") or data_file.get("restricted"))
-            eligible = format_name is not None and not restricted
+            size_bytes = self._int(data_file.get("filesize"))
+            eligible = (
+                format_name is not None
+                and not restricted
+                and (
+                    size_bytes is None
+                    or size_bytes <= settings.analysis_max_download_bytes
+                )
+            )
             if not eligible:
                 continue
             reason = (
@@ -366,7 +374,7 @@ class DataverseAnalysisProvider:
                     filename=filename,
                     format=format_name,
                     mime_type=self._text(data_file.get("contentType")),
-                    size_bytes=self._int(data_file.get("filesize")),
+                    size_bytes=size_bytes,
                     checksum=self._text(data_file.get("checksum", {}).get("value"))
                     if isinstance(data_file.get("checksum"), dict)
                     else None,
@@ -397,9 +405,20 @@ class DataverseAnalysisProvider:
     @staticmethod
     def _format(filename: str, content_type: object) -> str | None:
         suffix = PurePosixPath(filename).suffix.lower()
-        if suffix == ".csv" or str(content_type).lower().startswith("text/csv"):
+        content = (
+            ""
+            if content_type is None
+            else str(content_type).lower().split(";", 1)[0].strip()
+        )
+        if content:
+            if content in {"text/csv", "text/comma-separated-values"}:
+                return "csv"
+            if content in {"text/tab-separated-values", "text/tsv"}:
+                return "tsv"
+            return None
+        if suffix == ".csv":
             return "csv"
-        if suffix in {".tsv", ".tab"} or "tab-separated-values" in str(content_type).lower():
+        if suffix in {".tsv", ".tab"}:
             return "tsv"
         return None
 
@@ -476,7 +495,14 @@ class ZenodoAnalysisProvider:
             if not filename or not url:
                 continue
             format_name = self._format(filename, item.get("mimetype"))
-            eligible = format_name is not None
+            size_bytes = self._int(item.get("size"))
+            eligible = (
+                format_name is not None
+                and (
+                    size_bytes is None
+                    or size_bytes <= settings.analysis_max_download_bytes
+                )
+            )
             if not eligible:
                 continue
             resources.append(
@@ -487,7 +513,7 @@ class ZenodoAnalysisProvider:
                     filename=filename,
                     format=format_name,
                     mime_type=self._text(item.get("mimetype")),
-                    size_bytes=self._int(item.get("size")),
+                    size_bytes=size_bytes,
                     checksum=self._text(item.get("checksum")),
                     version=version,
                     source_url=url,
@@ -511,10 +537,17 @@ class ZenodoAnalysisProvider:
     @staticmethod
     def _format(filename: str, content_type: object) -> str | None:
         suffix = PurePosixPath(filename).suffix.lower()
-        content = str(content_type).lower()
-        if suffix == ".csv" or content.startswith("text/csv"):
+        content = "" if content_type is None else str(content_type).lower()
+        if content:
+            normalized = content.split(";", 1)[0].strip()
+            if normalized in {"text/csv", "text/comma-separated-values"}:
+                return "csv"
+            if normalized in {"text/tab-separated-values", "text/tsv"}:
+                return "tsv"
+            return None
+        if suffix == ".csv":
             return "csv"
-        if suffix in {".tsv", ".tab"} or "tab-separated-values" in content:
+        if suffix in {".tsv", ".tab"}:
             return "tsv"
         return None
 

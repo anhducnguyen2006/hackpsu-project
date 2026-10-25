@@ -78,6 +78,25 @@ class ZenodoService:
                 logger.warning("Ignoring invalid Zenodo dataset item: %s", error)
         return records
 
+    def verify_analyzable(self, record: DatasetRecord) -> DatasetRecord | None:
+        """Resolve published files through the analysis adapter without downloading."""
+        from app.analysis.source_providers import SourceProviderError, ZenodoAnalysisProvider
+
+        try:
+            provider = ZenodoAnalysisProvider(client=self.client)
+            verified = provider.resolve(record.id)
+            resources = provider.resources(verified)
+        except SourceProviderError:
+            return None
+        if not resources:
+            return None
+        return verified.model_copy(
+            update={
+                "data_available": True,
+                "analysis_eligibility": "supported_resource_verified",
+            }
+        )
+
     @classmethod
     def _record_from_item(cls, item: dict[str, Any]) -> DatasetRecord:
         metadata = item.get("metadata")
@@ -100,6 +119,8 @@ class ZenodoService:
         if landing_page_url is None:
             raise ValueError("record has no verified landing page URL")
         resources = cls._resources(item.get("files"))
+        if not resources:
+            raise ValueError("record has no supported public tabular resource")
         license_value = metadata.get("license")
         license_name = cls._license_name(license_value)
         return DatasetRecord(
@@ -139,13 +160,17 @@ class ZenodoService:
 
     @staticmethod
     def _format(mimetype: str | None, filename: str | None) -> str | None:
-        if mimetype and "/" in mimetype:
-            subtype = mimetype.split("/", 1)[1].split(";", 1)[0].strip()
-            if subtype and subtype != "octet-stream":
-                return subtype
+        if mimetype:
+            normalized = mimetype.split(";", 1)[0].strip().lower()
+            if normalized in {"text/csv", "text/comma-separated-values"}:
+                return "csv"
+            if normalized in {"text/tab-separated-values", "text/tsv"}:
+                return "tsv"
+            return None
         if filename:
             suffix = PurePosixPath(filename).suffix.lstrip(".").lower()
-            return suffix or None
+            if suffix in {"csv", "tsv", "tab"}:
+                return "tsv" if suffix in {"tsv", "tab"} else "csv"
         return None
 
     @classmethod

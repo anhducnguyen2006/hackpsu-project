@@ -6,6 +6,7 @@ import pytest
 
 from app.api.schemas import (
     DatasetRecord,
+    DownloadResource,
     RelevanceAssessmentBatch,
     ResearchInterpretation,
     UCIRecord,
@@ -167,6 +168,36 @@ def test_zenodo_skips_non_dataset_and_handles_rate_limits() -> None:
         )
 
 
+def test_zenodo_search_excludes_pdf_only_records() -> None:
+    client = FakeClient(
+        FakeResponse(
+            {
+                "hits": {
+                    "hits": [
+                        {
+                            "id": 2,
+                            "links": {"html": "https://zenodo.org/records/2"},
+                            "metadata": {
+                                "upload_type": "dataset",
+                                "title": "Publication deposit",
+                            },
+                            "files": [
+                                {
+                                    "key": "paper.pdf",
+                                    "mimetype": "application/pdf",
+                                    "links": {"self": "https://zenodo.org/api/files/paper.pdf"},
+                                }
+                            ],
+                        }
+                    ]
+                }
+            }
+        )
+    )
+
+    assert ZenodoService(client=client).search(["publication"]) == []
+
+
 def test_zenodo_accepts_current_self_html_landing_link() -> None:
     client = FakeClient(
         FakeResponse(
@@ -180,6 +211,15 @@ def test_zenodo_accepts_current_self_html_landing_link() -> None:
                                 "resource_type": {"type": "dataset"},
                                 "title": "Rainfall observations",
                             },
+                            "files": [
+                                {
+                                    "key": "rainfall.csv",
+                                    "mimetype": "text/csv",
+                                    "links": {
+                                        "self": "https://zenodo.org/api/files/rainfall.csv"
+                                    },
+                                }
+                            ],
                         }
                     ]
                 }
@@ -266,6 +306,21 @@ class FakeProvider:
         return self.records
 
 
+class VerifyingProvider(FakeProvider):
+    def __init__(
+        self,
+        source: str,
+        records: list[DatasetRecord],
+        verified: dict[str, DatasetRecord | None],
+    ) -> None:
+        super().__init__(source, records)
+        self.verified = verified
+        self.download_calls = 0
+
+    def verify_analyzable(self, record: DatasetRecord) -> DatasetRecord | None:
+        return self.verified.get(record.id)
+
+
 def _external_record(source: str, source_id: str, doi: str | None = None) -> DatasetRecord:
     source_name = {
         "dataverse": "Harvard Dataverse",
@@ -350,3 +405,38 @@ def test_empty_external_results_preserve_empty_result_behavior() -> None:
     assert datasets
     assert warnings == []
     assert mode == "gemini"
+
+
+def test_final_discovery_excludes_pdf_only_external_records_without_downloading() -> None:
+    pdf_only = _external_record("zenodo", "paper")
+    csv_record = _external_record("zenodo", "table")
+    verified_csv = csv_record.model_copy(
+        update={
+            "download_resources": [
+                DownloadResource(
+                    url="https://zenodo.org/api/files/table.csv",
+                    format="csv",
+                )
+            ],
+            "analysis_eligibility": "supported_resource_verified",
+            "data_available": True,
+        }
+    )
+    provider = VerifyingProvider(
+        "Zenodo",
+        [pdf_only, csv_record],
+        {pdf_only.id: None, csv_record.id: verified_csv},
+    )
+
+    _, datasets, warnings, _ = DiscoveryService(
+        FakeUCIRepository(),
+        FakeGemini(),
+        [provider],
+        FakeEmbedding(),
+    ).search("Does rainfall affect crop yield?", 8)
+
+    external = [dataset for dataset in datasets if dataset.source == "Zenodo"]
+    assert [dataset.dataset_id for dataset in external] == ["zenodo:table"]
+    assert external[0].analysis_eligibility == "supported_resource_verified"
+    assert provider.download_calls == 0
+    assert warnings == []
