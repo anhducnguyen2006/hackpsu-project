@@ -20,6 +20,9 @@ from app.api.schemas import (
 class DataProfiler:
     """Deterministic Pandas/NumPy profiling with conservative measurement labels."""
 
+    # Bump when the profile algorithm or its serialized shape changes.
+    PROFILER_VERSION = "data-profiler-v1"
+
     def profile(
         self,
         dataframe: pd.DataFrame,

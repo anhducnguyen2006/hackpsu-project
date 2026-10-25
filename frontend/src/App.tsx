@@ -10,13 +10,15 @@ import { EXAMPLE_ANALYSIS } from "./demo/researchExample";
 import { DatasetGraph } from "./components/DatasetGraph";
 import { AnalysisView } from "./components/AnalysisView";
 import { EXAMPLE_EXPLORATION } from "./demo/researchExample";
+import { PastResearch } from "./components/PastResearch";
 import type { DatasetAnalysisResponse, DatasetGraphResponse, DiscoveryResponse, ExploratoryAnalysisResponse } from "./types";
 
-export type PreviewStage = "question" | "interpretation" | "datasets" | "graph" | "analysis";
+export type PreviewStage = "question" | "interpretation" | "datasets" | "graph" | "analysis" | "history";
 const stages: { key: PreviewStage; label: string }[] = [
   { key: "question", label: "Question" }, { key: "interpretation", label: "Interpretation" },
   { key: "datasets", label: "Datasets" }, { key: "graph", label: "Graph" },
   { key: "analysis", label: "Analysis" },
+  { key: "history", label: "Past Research" },
 ];
 
 function getApiBase(): string | undefined {
@@ -37,10 +39,15 @@ function App({ authControls }: { authControls?: ReactNode }) {
   const [graph, setGraph] = useState<DatasetGraphResponse | null>(null);
   const [graphLoading, setGraphLoading] = useState(false);
   const [graphError, setGraphError] = useState("");
+  const [selectedQueryId, setSelectedQueryId] = useState<number | null>(null);
   const requestSequence = useRef(0);
   const searchController = useRef<AbortController | null>(null);
   const apiBase = getApiBase();
   const liveSearchEnabled = Boolean(apiBase);
+  function openResearch(queryId: number) {
+    setSelectedQueryId(queryId);
+    setStage("history");
+  }
   async function search(question: string) {
     if (!apiBase) throw new Error("Live search is not configured for this frontend.");
     searchController.current?.abort();
@@ -101,11 +108,11 @@ function App({ authControls }: { authControls?: ReactNode }) {
   return <div className="site-shell">
     <header className="site-header">
       <div className="brand-row"><span className="brand">DataOPedia</span><span className="preview-label">{analysisMode === "live" ? "Live repository search" : "Static preview · cached UCI example"}</span>{authControls}</div>
-      <nav aria-label="Preview stages" className="stage-nav">
+      <nav aria-label="Research navigation" className="stage-nav">
         {stages.map(({ key, label }, index) => <button type="button" key={key} aria-current={stage === key ? "page" : undefined} onClick={() => setStage(key)}><span className="nav-index" aria-hidden="true">0{index + 1}</span>{label}</button>)}
       </nav>
     </header>
-    <main id="main-content" className="stage-main">{stage !== "question" && <div className="example-context"><span className="data-label">{analysisMode === "live" ? "Research question" : "Cached example question"}</span><span>{analysisMode === "live" ? activeQuestion : EXAMPLE_QUESTION}</span><button type="button" onClick={() => setStage("question")}>Revise question</button></div>}{stage === "question" ? <ResearchQuestion exampleQuestion={EXAMPLE_QUESTION} onExploreExample={() => { requestSequence.current += 1; setDiscovery(null); setActiveQuestion(EXAMPLE_QUESTION); setAnalysisMode("preview"); setAnalysis(EXAMPLE_ANALYSIS); setExploration(EXAMPLE_EXPLORATION); setAnalysisError(""); setGraph(null); setGraphError(""); setGraphLoading(false); setStage("interpretation"); }} onSearch={liveSearchEnabled ? search : undefined} /> : stage === "interpretation" ? <InterpretationSheet interpretation={liveInterpretation} processingMode={analysisMode === "live" ? discovery?.processing_mode : "keyword_fallback"} onSearchQuestion={liveSearchEnabled ? search : undefined} /> : stage === "datasets" ? <DatasetLedger datasets={liveDatasets} discovery={analysisMode === "live" ? discovery : null} analysisMode={analysisMode} analysisLoading={analysisLoading} analysisError={analysisError} onOpenAnalysis={openAnalysis} graph={graph} graphLoading={graphLoading} graphError={graphError} /> : stage === "graph" ? <DatasetGraph graph={graph} datasets={liveDatasets} loading={graphLoading} error={graphError} /> : analysisMode === "live" && !analysis ? <section className="analysis-page" aria-labelledby="analysis-title"><p className="eyebrow">Research instrument / 05 — Analysis</p><h1 id="analysis-title">Analysis</h1><div className="empty-state" role="status"><h2>No dataset analyzed</h2><p>Select an eligible UCI dataset from the discovery ledger to load a computed profile.</p></div></section> : <AnalysisView analysis={analysis ?? EXAMPLE_ANALYSIS} exploration={analysisMode === "live" ? exploration : EXAMPLE_EXPLORATION} />}</main>
+    <main id="main-content" className="stage-main">{stage !== "question" && stage !== "history" && <div className="example-context"><span className="data-label">{analysisMode === "live" ? "Research question" : "Cached example question"}</span><span>{analysisMode === "live" ? activeQuestion : EXAMPLE_QUESTION}</span><button type="button" onClick={() => setStage("question")}>Revise question</button></div>}{stage === "question" ? <ResearchQuestion exampleQuestion={EXAMPLE_QUESTION} apiBase={apiBase} onOpenResearch={openResearch} onExploreExample={() => { requestSequence.current += 1; setDiscovery(null); setActiveQuestion(EXAMPLE_QUESTION); setAnalysisMode("preview"); setAnalysis(EXAMPLE_ANALYSIS); setExploration(EXAMPLE_EXPLORATION); setAnalysisError(""); setGraph(null); setGraphError(""); setGraphLoading(false); setStage("interpretation"); }} onSearch={liveSearchEnabled ? search : undefined} /> : stage === "history" ? <PastResearch apiBase={apiBase} selectedQueryId={selectedQueryId} onSelectQuery={setSelectedQueryId} /> : stage === "interpretation" ? <InterpretationSheet interpretation={liveInterpretation} processingMode={analysisMode === "live" ? discovery?.processing_mode : "keyword_fallback"} onSearchQuestion={liveSearchEnabled ? search : undefined} /> : stage === "datasets" ? <DatasetLedger datasets={liveDatasets} discovery={analysisMode === "live" ? discovery : null} analysisMode={analysisMode} analysisLoading={analysisLoading} analysisError={analysisError} onOpenAnalysis={openAnalysis} graph={graph} graphLoading={graphLoading} graphError={graphError} /> : stage === "graph" ? <DatasetGraph graph={graph} datasets={liveDatasets} loading={graphLoading} error={graphError} /> : analysisMode === "live" && !analysis ? <section className="analysis-page" aria-labelledby="analysis-title"><p className="eyebrow">Research instrument / 05 — Analysis</p><h1 id="analysis-title">Analysis</h1><div className="empty-state" role="status"><h2>No dataset analyzed</h2><p>Select an eligible UCI dataset from the discovery ledger to load a computed profile.</p></div></section> : <AnalysisView analysis={analysis ?? EXAMPLE_ANALYSIS} exploration={analysisMode === "live" ? exploration : EXAMPLE_EXPLORATION} />}</main>
     <footer className="site-footer">DataOPedia / Research instrument · {analysisMode === "live" ? "Live repository metadata" : "Cached UCI example"}</footer>
   </div>;
 }

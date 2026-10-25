@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import threading
+import time
 from collections.abc import Sequence
 from typing import Any
 
@@ -10,6 +12,7 @@ import numpy as np
 from app.api.schemas import DatasetRecord
 from app.config import settings
 
+logger = logging.getLogger(__name__)
 
 class EmbeddingServiceError(RuntimeError):
     """Raised when local semantic ranking cannot be completed."""
@@ -17,6 +20,9 @@ class EmbeddingServiceError(RuntimeError):
 
 class EmbeddingService:
     """Lazy, process-local Sentence Transformers ranking for dataset metadata."""
+
+    # BAAI/bge-small-en-v1.5 produces 384-dimensional embeddings.
+    EMBEDDING_DIMENSIONS = 384
 
     def __init__(
         self,
@@ -30,6 +36,16 @@ class EmbeddingService:
         self._model_lock = threading.Lock()
         self._embedding_cache: dict[tuple[str, str, str, str], np.ndarray] = {}
         self._dataset_cache_keys: dict[tuple[str, str], tuple[str, str, str, str]] = {}
+
+    @property
+    def model_identifier(self) -> str:
+        return f"{self.model_name}@{self.model_version}"
+
+    def embed_text(self, text: str) -> np.ndarray:
+        """Return one normalized local-model embedding for arbitrary text."""
+        if not text or not text.strip():
+            raise EmbeddingServiceError("Embedding text is empty.")
+        return self._normalize_rows(self._encode([text.strip()]))[0]
 
     def rank(
         self,
@@ -67,9 +83,22 @@ class EmbeddingService:
         if not valid:
             return [{} for _ in query_texts]
         try:
+            query_started = time.perf_counter()
             query_matrix = self._normalize_rows(self._encode(query_texts))
+            query_elapsed = (time.perf_counter() - query_started) * 1000
+            candidate_started = time.perf_counter()
             candidate_matrix = self._candidate_embeddings(valid)
+            candidate_elapsed = (time.perf_counter() - candidate_started) * 1000
+            similarity_started = time.perf_counter()
             scores = np.clip(query_matrix @ candidate_matrix.T, -1.0, 1.0)
+            logger.info(
+                "discovery stage=vector_similarity queries=%d candidates=%d query_embedding_ms=%.1f candidate_embedding_ms=%.1f cosine_ms=%.1f",
+                len(query_texts),
+                len(valid),
+                query_elapsed,
+                candidate_elapsed,
+                (time.perf_counter() - similarity_started) * 1000,
+            )
             return [
                 {candidate.id: float(score) for (candidate, _), score in zip(valid, row)}
                 for row in scores

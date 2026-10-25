@@ -71,6 +71,42 @@ export interface DiscoveryResponse {
   ranking_status?: "semantic_embeddings" | "keyword_fallback" | "unavailable" | "demo_cached";
 }
 
+export interface ResearchHistoryItem {
+  id: number;
+  question: string;
+  normalized_question: string;
+  created_at: string;
+}
+
+export interface SimilarResearchItem extends ResearchHistoryItem {
+  similarity_score: number;
+}
+
+export interface SimilarResearchRequest {
+  research_question: string;
+}
+
+export interface SavedDatasetMatch {
+  metadata: Record<string, unknown>;
+  rank: number | null;
+  relevance_score: number | null;
+  explanation: string | null;
+}
+
+export interface SavedAssessment {
+  dataset_id: number | string;
+  model?: string;
+  assessment_version?: string;
+  assessment: Record<string, unknown>;
+  suitability_score?: number | null;
+  created_at?: string;
+}
+
+export interface ResearchSession extends ResearchHistoryItem {
+  datasets: SavedDatasetMatch[];
+  assessments: SavedAssessment[];
+}
+
 export type GraphNodeType = "DATASET" | "VARIABLE" | "GEOGRAPHY" | "TIME_PERIOD" | "RESEARCH_CONCEPT";
 
 export interface DatasetGraphNodeData {

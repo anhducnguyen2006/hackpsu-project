@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="510" viewBox="0 0 780 510" role="img" aria-labelledby="title desc">
+<title id="title">The file needs a memory.</title><desc id="desc">A README should explain variables, missing values and context. Editorial paraphrase of PLOS Computational Biology. Verified 25 Oct 2026.</desc>
+<rect width="780" height="510" rx="28" fill="#353535"/>
+<rect x="48" y="47" width="7" height="27" rx="2" fill="#a6a6a8"/>
+<text x="72" y="69" font-family="Arial, sans-serif" font-size="28" fill="#bcbcc1">Field notes</text>
+<text font-family="Arial, sans-serif" font-size="54" font-weight="600" letter-spacing="-1.3" fill="#f5f4f1"><tspan x="48" y="150">The file needs a memory.</tspan></text>
+<text font-family="Arial, sans-serif" font-size="31" fill="#c7c7cb"><tspan x="48" y="214">A README should explain variables, missing</tspan><tspan x="48" y="253">values and context.</tspan></text>
+<text x="48" y="429" font-family="Arial, sans-serif" font-size="27" fill="#f5f4f1">PLOS Computational Biology</text>
+<text x="48" y="475" font-family="Arial, sans-serif" font-size="23" fill="#a9a9af">Editorial summary · Verified 25 Oct 2026</text>
+<path d="M694 72h28v28m-28 0 28-28" fill="none" stroke="#aaaab0" stroke-width="3"/>
+</svg>
