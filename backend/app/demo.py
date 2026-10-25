@@ -145,7 +145,7 @@ def demo_analysis() -> DatasetAnalysisResponse:
             name="G3",
             variable_description="final grade",
             data_type="int64",
-            measurement_type="continuous",
+            measurement_type="discrete_numeric",
             missing_count=0,
             missing_fraction=0,
             unique_count=18,
@@ -240,7 +240,7 @@ def demo_exploration() -> ExploratoryAnalysisResponse:
         independent_variable="studytime",
         outcome_variable="G3",
         independent_measurement_type="ordinal",
-        outcome_measurement_type="continuous",
+        outcome_measurement_type="discrete_numeric",
         categories=[
             ExploratoryCategory(category=1, observations=212, mean_outcome=10.84433962264151, median_outcome=11, standard_deviation=3.218624126547874),
             ExploratoryCategory(category=2, observations=305, mean_outcome=12.091803278688525, median_outcome=12, standard_deviation=3.243125070719802),

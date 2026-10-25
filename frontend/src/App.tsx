@@ -41,7 +41,9 @@ function App({ authControls }: { authControls?: ReactNode }) {
   const [graphError, setGraphError] = useState("");
   const [selectedQueryId, setSelectedQueryId] = useState<number | null>(null);
   const requestSequence = useRef(0);
+  const analysisSequence = useRef(0);
   const searchController = useRef<AbortController | null>(null);
+  const analysisController = useRef<AbortController | null>(null);
   const apiBase = getApiBase();
   const liveSearchEnabled = Boolean(apiBase);
   function openResearch(queryId: number) {
@@ -89,18 +91,35 @@ function App({ authControls }: { authControls?: ReactNode }) {
     if (analysisMode === "preview") { setStage("analysis"); return; }
     if (!datasetId.startsWith("uci:")) return;
     if (!apiBase) return;
+    analysisController.current?.abort();
+    const controller = new AbortController();
+    analysisController.current = controller;
+    const sequence = ++analysisSequence.current;
     setAnalysisLoading(true);
     setAnalysisError("");
+    setAnalysis(null);
+    setExploration(undefined);
     try {
-      const response = await fetch(`${apiBase}/api/v1/datasets/${encodeURIComponent(datasetId)}/analyze`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ research_question: activeQuestion }) });
-      if (!response.ok) throw new Error("UCI analysis is unavailable for this dataset right now.");
+      const response = await fetch(`${apiBase}/api/v1/datasets/${encodeURIComponent(datasetId)}/analyze`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ research_question: activeQuestion }), signal: controller.signal });
+      if (!response.ok) {
+        let detail = "UCI analysis is unavailable for this dataset right now.";
+        try {
+          const payload = await response.json() as { detail?: string };
+          if (payload.detail) detail = payload.detail;
+        } catch {
+          // Keep the standard message when the server did not return JSON.
+        }
+        throw new Error(detail);
+      }
+      if (sequence !== analysisSequence.current) return;
       setAnalysis(await response.json() as DatasetAnalysisResponse);
-      setExploration(undefined);
       setStage("analysis");
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      if (sequence !== analysisSequence.current) return;
       setAnalysisError(error instanceof Error ? error.message : "UCI analysis failed. Please try again.");
     } finally {
-      setAnalysisLoading(false);
+      if (sequence === analysisSequence.current) setAnalysisLoading(false);
     }
   }
   const liveInterpretation = analysisMode === "live" ? discovery?.interpretation ?? null : EXAMPLE_INTERPRETATION;

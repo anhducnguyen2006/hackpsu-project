@@ -63,6 +63,7 @@ class DatasetAnalysisService:
                 dataframe,
                 interpretation,
                 metadata.variable_descriptions,
+                metadata.variable_types,
                 warnings,
             )
         except Exception as error:
@@ -109,6 +110,7 @@ class DatasetAnalysisService:
         dataframe: pd.DataFrame,
         interpretation: ResearchInterpretation | None,
         variable_descriptions: dict[str, str],
+        variable_types: dict[str, str],
         warnings: list[str],
     ) -> tuple[DataProfile, int | None]:
         dataset_database_id: int | None = None
@@ -148,6 +150,7 @@ class DatasetAnalysisService:
             dataframe,
             interpretation,
             variable_descriptions,
+            variable_types,
         )
         # Only a fully validated profile reaches persistence. Cache failures are
         # non-fatal because the current analysis result is still trustworthy.

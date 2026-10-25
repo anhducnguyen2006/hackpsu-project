@@ -133,7 +133,7 @@ def test_profiler_version_change_invalidates_profile(monkeypatch) -> None:
     first_service = DatasetAnalysisService(repository, NoAssessmentGemini())
     first_service.analyze("uci:320", _request())
     second_service = DatasetAnalysisService(repository, NoAssessmentGemini())
-    second_service.profiler.PROFILER_VERSION = "data-profiler-v2"
+    second_service.profiler.PROFILER_VERSION = "data-profiler-v4"
     calls = 0
     original_profile = second_service.profiler.profile
 
