@@ -16,7 +16,9 @@ Response `200`:
 
 ## `POST /discovery/search`
 
-Searches verified UCI metadata for a natural-language research question. In live mode Gemini interprets the question and may rerank enriched metadata. If Gemini is unavailable, keyword fallback remains explicit in `processing_mode` and `warnings`.
+Searches verified repository metadata for a natural-language research question. Gemini interprets the question when available; normal candidate ranking uses local embedding similarity across the full question and independently extracted research concepts. If Gemini is unavailable, deterministic concept extraction remains explicit in `processing_mode` and `warnings`.
+
+Each result may include additive `concept_matches` evidence. Semantic scores are ranking signals over verified metadata, not scientific-suitability probabilities. Concept scores are fused as full question (0.45), independent variables (0.25), dependent variables (0.20), and context/subject/synonyms/search terms (0.10); unavailable groups are renormalized so datasets matching only one research variable remain eligible.
 
 Request:
 

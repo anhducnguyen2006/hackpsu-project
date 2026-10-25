@@ -3,17 +3,23 @@ import time
 
 from fastapi import APIRouter
 
-from app.api.schemas import DiscoveryRequest, DiscoveryResponse
+from app.api.schemas import DiscoveryGraphRequest, DiscoveryRequest, DiscoveryResponse, KnowledgeGraphResponse
 from app.assessment.gemini import GeminiService
 from app.config import settings
 from app.demo import demo_search
-from app.discovery.search import DiscoveryService
+from app.discovery.embeddings import EmbeddingService
+from app.discovery.search import DiscoveryService, build_external_providers
 from app.discovery.uci import UCIRepositoryService
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
 logger = logging.getLogger(__name__)
 repository = UCIRepositoryService(catalog_ttl=settings.uci_catalog_ttl_seconds)
-service = DiscoveryService(repository, GeminiService())
+service = DiscoveryService(
+    repository,
+    GeminiService(),
+    build_external_providers(),
+    EmbeddingService(),
+)
 
 
 @router.post("/search", response_model=DiscoveryResponse)
@@ -29,13 +35,21 @@ def search(request: DiscoveryRequest) -> DiscoveryResponse:
             explanation="DEMO_MODE is enabled. These are cached verified UCI results, not a live repository search.",
             warnings=warnings,
             processing_mode=processing_mode,
+            ranking_status="demo_cached",
         )
-    interpretation, datasets, warnings, processing_mode = service.search(
+    (
+        interpretation,
+        datasets,
+        warnings,
+        processing_mode,
+        ranking_status,
+    ) = service.search_with_status(
         request.research_question, request.limit
     )
     explanation = (
-        "Results are ranked using verified UCI metadata. Preliminary relevance is "
-        "not the same as research suitability; full suitability requires data profiling."
+        "Results are ranked using verified repository metadata and local semantic "
+        "similarity. Semantic similarity is not research suitability; full suitability "
+        "requires data profiling."
         if datasets
         else "No UCI datasets matched the verified metadata search terms."
     )
@@ -45,6 +59,7 @@ def search(request: DiscoveryRequest) -> DiscoveryResponse:
         explanation=explanation,
         warnings=warnings,
         processing_mode=processing_mode,
+        ranking_status=ranking_status,
     )
     logger.info(
         "discovery stage=serialization elapsed_ms=%.1f datasets=%d mode=%s",
@@ -53,3 +68,11 @@ def search(request: DiscoveryRequest) -> DiscoveryResponse:
         response.processing_mode,
     )
     return response
+
+
+@router.post("/graph", response_model=KnowledgeGraphResponse)
+def graph(request: DiscoveryGraphRequest) -> KnowledgeGraphResponse:
+    """Build a graph from this process's cached normalized search records."""
+    if settings.demo_mode:
+        return KnowledgeGraphResponse(nodes=[], edges=[])
+    return service.graph_for_search(request.research_question, request.limit)

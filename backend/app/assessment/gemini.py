@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any
 
 from app.api.schemas import (
@@ -56,42 +57,56 @@ def _ensure_complete_response(response: Any, operation: str) -> None:
 class GeminiService:
     def __init__(self, client: Any = None) -> None:
         self._client = client
+        self._interpretation_cache: dict[str, tuple[float, ResearchInterpretation]] = {}
+        self.interpretation_cache_ttl_seconds = 300
 
     def interpret(self, research_question: str) -> ResearchInterpretation:
         if not settings.gemini_api_key and self._client is None:
             raise GeminiUnavailableError("GEMINI_API_KEY is not configured.")
+        cache_key = " ".join(research_question.strip().split()).lower()
+        cached = self._interpretation_cache.get(cache_key)
+        if cached and time.monotonic() - cached[0] < self.interpretation_cache_ttl_seconds:
+            logger.info("gemini operation=interpretation cache_hit=true")
+            return cached[1]
         try:
             client = self._client or self._create_client()
             from google.genai import types
 
             prompt = (
-                "Interpret this scientific research question for dataset discovery. "
-                "Return only the requested structured fields. Generate research concepts "
-                "and search terms, never dataset names, IDs, URLs, metadata, or statistics. "
-                "Use 3 to 5 concise search terms.\n\n"
+                "Interpret this scientific research question for dataset discovery and "
+                "return only the structured fields in the response schema. Preserve the "
+                "researcher's original intent and do not narrow it without evidence. "
+                "Rewrite unclear wording as one concise, searchable scientific question "
+                "in refined_question; this is a suggestion, not a replacement. Identify "
+                "independent and dependent variables only when applicable. For broad or "
+                "exploratory questions, either list the applicable concepts or use empty "
+                "lists rather than inventing a causal hypothesis. Identify population, "
+                "geographic scope, and temporal scope only when supplied or reliably "
+                "implied. Do not assume that an ambiguous term such as pollution means "
+                "air pollution. Record important ambiguity or assumptions separately in "
+                "assumptions_or_ambiguities. Include alternate scientific terminology and "
+                "relevant synonyms. Generate 3 to 5 useful repository search terms. Never "
+                "invent datasets, source names, dataset IDs, URLs, data availability, "
+                "research findings, or statistics.\n\n"
                 f"Research question: {research_question}"
             )
             response = client.models.generate_content(
                 model=settings.gemini_model,
                 contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=ResearchInterpretation,
-                    max_output_tokens=700,
-                    thinking_config=types.ThinkingConfig(
-                        thinking_level=types.ThinkingLevel.LOW
-                    ),
-                )
+                config=_config(types, ResearchInterpretation, max_output_tokens=900),
             )
             _ensure_complete_response(response, "interpretation")
             self._log_usage(response, "interpretation")
             parsed = getattr(response, "parsed", None)
             if parsed is not None:
-                return ResearchInterpretation.model_validate(parsed)
-            text = getattr(response, "text", None)
-            if not text:
-                raise ValueError("Gemini returned an empty response.")
-            return ResearchInterpretation.model_validate(json.loads(text))
+                interpretation = ResearchInterpretation.model_validate(parsed)
+            else:
+                text = getattr(response, "text", None)
+                if not text:
+                    raise ValueError("Gemini returned an empty response.")
+                interpretation = ResearchInterpretation.model_validate(json.loads(text))
+            self._interpretation_cache[cache_key] = (time.monotonic(), interpretation)
+            return interpretation
         except GeminiUnavailableError:
             raise
         except Exception as error:
