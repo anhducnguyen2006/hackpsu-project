@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import AppEntry from "./AppEntry";
 
@@ -14,6 +14,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Unmount while media mocks are still available to pending React effects.
+  cleanup();
   window.history.replaceState(null, "", "/");
   vi.unstubAllGlobals();
   vi.restoreAllMocks();

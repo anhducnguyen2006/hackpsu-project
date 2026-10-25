@@ -1,6 +1,6 @@
 import { Component, lazy, Suspense, useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import StaticWorldPlate from "./StaticWorldPlate";
-import { paletteProperties } from "./palette";
+import { ThemeToggle } from "../components/ThemeToggle";
 import styles from "./LandingPage.module.css";
 import EvidenceWall from "./EvidenceWall";
 import { LANDING_DURATION } from "./storyTiming";
@@ -37,13 +37,14 @@ export default function LandingPage({ authControls }: { authControls?: ReactNode
   useEffect(() => { if (reducedMotion) setReady(false); }, [reducedMotion]);
 
   const journeyMode = showCanvas ? (ready ? "active" : "loading") : "static";
-  const theme = { ...paletteProperties, "--landing-duration": LANDING_DURATION } as CSSProperties;
+  const theme = { "--landing-duration": LANDING_DURATION } as CSSProperties;
 
   return <div ref={root} className={styles.page} style={theme} data-landing-page="arrival" data-journey={journeyMode}>
     <header className={styles.header} data-landing-header data-landing-chrome>
       <a className={styles.wordmark} href="/" aria-label="DataOPedia home">DataOPedia</a>
       <span className={styles.headerNote}>A research instrument</span>
       <a className={styles.headerLink} href="/dashboard">Research preview<DirectionIcon /></a>
+      <ThemeToggle />
       {authControls && <div className={styles.authControls}>{authControls}</div>}
     </header>
     <div className={styles.viewport}>

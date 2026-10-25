@@ -1,8 +1,9 @@
 import { useMemo } from "react";
-import { PALETTE } from "./palette";
+import { useLandingPalette } from "./palette";
 import { softenNearGeometry } from "./nearFade";
 
 export default function ScientificFrames() {
+  const PALETTE = useLandingPalette();
   const references = useMemo(() => new Float32Array([
     -8.5, 0, -2, 8.5, 0, -2,
     0, -7.5, -2, 0, 7.5, -2,

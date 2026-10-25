@@ -1,3 +1,4 @@
+import { ThemeToggle } from "./components/ThemeToggle";
 import type { ReactNode } from "react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { ResearchQuestion } from "./components/ResearchQuestion";
@@ -130,7 +131,7 @@ function App({ authControls }: { authControls?: ReactNode }) {
   const liveDatasets = analysisMode === "live" ? discovery?.datasets ?? [] : EXAMPLE_DATASETS;
   return <div className={`site-shell${stage === "graph" ? " graph-active" : ""}`}>
     <header className="site-header">
-      <div className="brand-row"><span className="brand">DataOPedia</span><span className="preview-label">{analysisMode === "live" ? "Live repository search" : "Static preview · cached UCI example"}</span>{authControls}</div>
+      <div className="brand-row"><span className="brand">DataOPedia</span><span className="preview-label">{analysisMode === "live" ? "Live repository search" : "Static preview · cached UCI example"}</span><div className="header-actions"><ThemeToggle />{authControls}</div></div>
       <nav aria-label="Research navigation" className="stage-nav">
         {stages.map(({ key, label }, index) => <button type="button" key={key} aria-current={stage === key ? "page" : undefined} onClick={() => navigate(key)}><span className="nav-index" aria-hidden="true">0{index + 1}</span>{label}</button>)}
       </nav>

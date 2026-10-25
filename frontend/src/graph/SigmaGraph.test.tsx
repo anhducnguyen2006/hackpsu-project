@@ -1,3 +1,5 @@
+import { act } from "@testing-library/react";
+import { setTheme } from "../theme/theme";
 import { render, fireEvent } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { adaptEvidence } from './adapters';
@@ -90,4 +92,28 @@ it('extends node interactions to rendered labels and highlights hovered edge end
  expect(select).toHaveBeenLastCalledWith(edge.id);
  instance.listeners.leaveEdge.forEach(handler=>handler({edge:edge.id}));
  expect(instance.graph.getEdgeAttribute(edge.id,'opacity')).toBe(.48);
+});
+
+it('recolors the existing graph while preserving node positions, selection and camera', () => {
+ vi.spyOn(HTMLCanvasElement.prototype,'getContext').mockReturnValue(null);
+ vi.stubGlobal('ResizeObserver', class {observe(){} disconnect(){}});
+ vi.stubGlobal('matchMedia', () => ({matches:true}));
+ const snapshot=adaptEvidence({datasets:EXAMPLE_DATASETS,question:'Q',generation:1});
+ const session=newSession();
+ const view=render(<SigmaGraph projection={snapshot} snapshot={snapshot} session={session} retained={session} onSelect={()=>{}} onFailure={()=>{}} reduced onAnchor={()=>{}}/>);
+ const instance=instances[0], node=snapshot.nodes.find(n=>n.kind==='dataset')!;
+ const before={...instance.graph.getNodeAttributes(node.id)};
+ const camera={...instance.camera};
+ document.documentElement.dataset.theme='light';
+ document.documentElement.style.setProperty('--color-node-dataset','#B8C1A4');
+ act(()=>setTheme('dark'));
+ expect(instances).toHaveLength(1);
+ expect(instance.graph.getNodeAttribute(node.id,'color')).toBe('#B8C1A4');
+ expect(instance.graph.getNodeAttribute(node.id,'x')).toBe(before.x);
+ expect(instance.graph.getNodeAttribute(node.id,'y')).toBe(before.y);
+ expect(instance.camera).toEqual(camera);
+ expect(instance.kill).not.toHaveBeenCalled();
+ view.unmount();
+ document.documentElement.style.removeProperty('--color-node-dataset');
+ document.documentElement.removeAttribute('data-theme');
 });

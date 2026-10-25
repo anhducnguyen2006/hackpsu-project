@@ -1,3 +1,5 @@
+import { observeThemeColors, themeColor } from "../theme/theme";
+import { nodeColor, edgeColor } from "./themeColors";
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import Graph from 'graphology';
 import Sigma from 'sigma';
@@ -9,9 +11,6 @@ import { placeLabels } from './labelPolicy';
 export interface GraphHandle {
   fit(): void; zoom(factor: number): void; pan(x: number, y: number): void; focus(id: string): void;
 }
-export const colors: Record<EvidenceNode['kind'], string> = {
-  research_question: '#B77A08', dataset: '#287F8C', variable: '#657786', concept: '#79609C', domain: '#77718B', geography: '#657786', time_period: '#657786',
-};
 type Projection = Pick<Snapshot, 'nodes' | 'edges'>;
 type Props = { projection: Projection; snapshot: Snapshot; session: GraphSession; retained: GraphSession;
   onSelect: (id: string) => void; onFailure: () => void; reduced: boolean;
@@ -91,9 +90,9 @@ export const SigmaGraph = forwardRef<GraphHandle, Props>(function SigmaGraph(pro
         primitives: { nodes: { layers: [sphereFill()] }, edges: { variables: { dash: {type:'number',default:10000}, gap: {type:'number',default:0} }, layers: [constellationEdges()] } },
         styles: {
           nodes: { cursor: 'pointer', x: { attribute: 'x' }, y: { attribute: 'y' }, color: { attribute: 'color' }, size: { attribute: 'size' }, label: { attribute: 'displayLabel' },
-            labelFont: '12px Geist', labelSize: 12, labelColor: '#3A0F34', labelVisibility: { attribute: 'labelVisibility', defaultValue: 'hidden' },
+            labelFont: '12px Geist', labelSize: 12, labelColor: themeColor('--color-heading'), labelVisibility: { attribute: 'labelVisibility', defaultValue: 'hidden' },
             opacity: { attribute: 'opacity', defaultValue: 1 }, backdropVisibility: 'hidden' },
-          edges: { cursor:'pointer', color: {attribute:'color',defaultValue:'#7F7888'}, size: 0.8, opacity: { attribute: 'opacity', defaultValue: 0.48 }, parallelSpread: { attribute: 'spread', defaultValue: 0 } },
+          edges: { cursor:'pointer', color: {attribute:'color',defaultValue:themeColor('--color-graph-edge')}, size: 0.8, opacity: { attribute: 'opacity', defaultValue: 0.48 }, parallelSpread: { attribute: 'spread', defaultValue: 0 } },
         },
       });
       renderer.current = r;
@@ -216,7 +215,7 @@ export const SigmaGraph = forwardRef<GraphHandle, Props>(function SigmaGraph(pro
     g.nodes().forEach(id => { if (!ids.has(id)) g.dropNode(id); });
     for (const [id, element] of labelElements.current) if (!ids.has(id)) {element.remove();labelElements.current.delete(id);}
     props.projection.nodes.forEach((n, i) => {
-      const attrs = { color: colors[n.kind], size: n.kind === 'research_question' ? 19 : n.kind === 'dataset' ? 12.5 : n.kind === 'variable' ? 6.2 : 9,
+      const attrs = { color: nodeColor(n.kind), size: n.kind === 'research_question' ? 19 : n.kind === 'dataset' ? 12.5 : n.kind === 'variable' ? 6.2 : 9,
         displayLabel: n.kind === 'research_question' ? 'Research question' : n.label.length > 34 ? `${n.label.slice(0,32)}…` : n.label };
       if (!labelElements.current.has(n.id) && labelLayer.current) {
         // Permanent DOM labels avoid Sigma 4's GPU label-picking issue.
@@ -238,12 +237,22 @@ export const SigmaGraph = forwardRef<GraphHandle, Props>(function SigmaGraph(pro
       else { const p = seedPosition(n, i, props.snapshot.nodes, props.retained.positions); g.addNode(n.id, { ...p, ...attrs }); props.retained.positions[n.id] = p; }
     });
     props.projection.edges.forEach(e => {
-      const attrs = { color:e.evidenceClass === 'inferred' ? '#82699C' : '#7F7888', dash: e.evidenceClass === 'unverified' ? 1 : e.evidenceClass === 'inferred' ? 5 : 10000,
+      const attrs = { color:edgeColor(e.evidenceClass), dash: e.evidenceClass === 'unverified' ? 1 : e.evidenceClass === 'inferred' ? 5 : 10000,
         gap: e.evidenceClass === 'unverified' ? 4 : e.evidenceClass === 'inferred' ? 4 : 0 };
       if (g.hasEdge(e.id)) g.mergeEdgeAttributes(e.id, attrs); else g.addEdgeWithKey(e.id, e.source, e.target, attrs);
     });
     r.refresh(); labelsRef.current(); emphasisRef.current();
   }, [props.projection, props.snapshot, props.session]);
+  useEffect(() => observeThemeColors(() => {
+    const g = graph.current;
+    for (const node of current.current.projection.nodes) {
+      if (g.hasNode(node.id)) g.setNodeAttribute(node.id, 'color', nodeColor(node.kind));
+    }
+    for (const edge of current.current.projection.edges) {
+      if (g.hasEdge(edge.id)) g.setEdgeAttribute(edge.id, 'color', edgeColor(edge.evidenceClass));
+    }
+    renderer.current?.refresh();
+  }), []);
   const topology = props.projection.nodes.map(n => n.id).join('|');
   useEffect(() => {
     if (!renderer.current || !props.projection.nodes.length) return;

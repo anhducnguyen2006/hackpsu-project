@@ -16,7 +16,7 @@ it("seeks through the story and evidence section identically in both scroll dire
     <section data-story-panels></section><section data-story-statement><span data-statement-line>Evidence</span></section>
     <section data-evidence-scene style="opacity: 0; visibility: hidden"></section>`;
   document.body.append(root);
-  const clock = { settle: 0, darkness: 0, worldVisibility: 1, statement: 0 };
+  const clock = { settle: 0, darkness: 0, worldVisibility: 1, statement: 0, evidence: 0 };
   const ctx = gsap.context(() => {
     const tl = gsap.timeline({ paused: true, defaults: { ease: "none" } });
     appendStorySequence(tl, clock);

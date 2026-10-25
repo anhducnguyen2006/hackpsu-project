@@ -1,26 +1,26 @@
-.panelsScene, .statementScene { position: absolute; inset: 0; z-index: 4; visibility: hidden; opacity: 0; padding: 24px var(--landing-gutter); color: var(--landing-paper); }
+.panelsScene, .statementScene { position: absolute; inset: 0; z-index: 4; visibility: hidden; opacity: 0; padding: 24px var(--landing-gutter); color: var(--color-inverse-text); }
 .panels { display: flex; gap: 16px; width: 100%; height: 100%; }
 .panel { position: relative; flex: 1 1 0; min-width: 0; min-height: 0; overflow: clip; border-radius: 6px; transition: flex-grow 650ms cubic-bezier(.22,1,.36,1); }
 .panel[data-active="true"] { flex-grow: 1.45; }
 .panel[data-contracted="true"] { flex-grow: .75; }
 .panel > img { width: 100%; height: 100%; object-fit: cover; transform: scale(1.025); transition: transform 800ms cubic-bezier(.22,1,.36,1); }
 .panel[data-active="true"] > img { transform: scale(1.085); }
-.scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgb(20 5 18 / .42), transparent 45%, rgb(20 5 18 / .72)); opacity: .9; transition: opacity 650ms; pointer-events: none; }
+.scrim { position: absolute; inset: 0; background: linear-gradient(180deg, var(--color-photo-scrim-top), transparent 45%, var(--color-photo-scrim-bottom)); opacity: .9; transition: opacity 650ms; pointer-events: none; }
 .panel[data-active="true"] .scrim { opacity: .7; }
 .select { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; width: 100%; padding: 32px 32px 84px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; font-family: inherit; }
 .label { font: 12px/1.5 var(--landing-font-mono); letter-spacing: .04em; }
 .panelTitle { font-size: clamp(28px, 3.8vw, 60px); font-weight: 500; line-height: 1; letter-spacing: -.045em; }
-.arrow { position: absolute; right: 30px; top: 26px; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: var(--landing-marigold); color: var(--landing-aubergine) !important; transition: transform 500ms cubic-bezier(.22,1,.36,1); }
+.arrow { position: absolute; right: 30px; top: 26px; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: var(--landing-marigold); color: var(--color-on-accent) !important; transition: transform 500ms cubic-bezier(.22,1,.36,1); }
 .panel[data-active="true"] .arrow { transform: scale(1.2); }
 .select:focus-visible { outline: 3px solid var(--landing-marigold); outline-offset: -6px; border-radius: 6px; }
 .arrow:focus-visible { outline-offset: 5px; }
 .credit { position: absolute; bottom: 28px; left: 32px; right: 24px; font-size: 11px; line-height: 1.5; pointer-events: none; }
 .statementScene { position: fixed; z-index: 5; }
-.statement { display: flex; flex-direction: column; justify-content: space-between; height: 100%; padding: 100px clamp(28px, 4vw, 64px) 96px; border-radius: 8px; background: var(--landing-marigold); color: var(--landing-aubergine); }
+.statement { display: flex; flex-direction: column; justify-content: space-between; height: 100%; padding: 100px clamp(28px, 4vw, 64px) 96px; border-radius: 8px; background: var(--landing-marigold); color: var(--color-on-accent); }
 .statement h2 { margin: 80px 0 0; font-family: var(--landing-font-display); font-size: clamp(44px, 6.9vw, 110px); font-weight: 500; line-height: .99; letter-spacing: -.055em; }
 .line { display: block; overflow: clip; padding-bottom: .08em; margin-bottom: -.08em; }
 .line > span { display: block; }
-:global([data-journey="static"]) .panelsScene, :global([data-journey="static"]) .statementScene { position: relative; inset: auto; visibility: visible; opacity: 1; margin: 80px calc(-1 * var(--landing-gutter)) 0; padding: 24px var(--landing-gutter); background: var(--landing-aubergine); }
+:global([data-journey="static"]) .panelsScene, :global([data-journey="static"]) .statementScene { position: relative; inset: auto; visibility: visible; opacity: 1; margin: 80px calc(-1 * var(--landing-gutter)) 0; padding: 24px var(--landing-gutter); background: var(--color-inverse-bg); }
 :global([data-journey="static"]) .panels { height: 650px; }
 :global([data-journey="static"]) .statement { min-height: 75svh; }
 @media (max-width: 759px) {
