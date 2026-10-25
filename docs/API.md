@@ -109,6 +109,57 @@ The response adds `analyzed_resource`, `eligibility_status`, `download_performed
 
 Harvard Dataverse file bytes may redirect once from `dataverse.harvard.edu/api/access/datafile/{id}` to the exact configured object-store host in `DATAVERSE_STORAGE_HOSTS` (default `dvn-cloud-iqss.s3.amazonaws.com`). That host is never accepted as an initial download URL. Arbitrary S3 buckets, private addresses, and credentialed URLs are rejected. Auth0 bearer tokens are never forwarded to Dataverse or storage.
 
+## `GET /research/graph`
+
+Returns the saved research-question knowledge graph from persisted
+`research_connections` edges. The default `limit` is 100 edges, with a maximum
+of 500. Use `research_id` to return only that question's neighborhood. This
+route is read-only: it does not generate embeddings, call Gemini, or create
+edges.
+
+Example:
+
+```text
+GET /api/v1/research/graph?limit=100&research_id=7
+```
+
+Response shape:
+
+```json
+{
+  "nodes": [{
+    "data": {
+      "id": "research:7",
+      "research_id": 7,
+      "type": "RESEARCH_QUESTION",
+      "label": "Does rainfall affect yield?",
+      "question": "Does rainfall affect yield?",
+      "created_at": "2026-10-25T12:00:00Z"
+    }
+  }],
+  "edges": [{
+    "data": {
+      "id": "research-connection:8",
+      "source": "research:7",
+      "target": "research:12",
+      "relationship_type": "SHARED_DATASET",
+      "similarity_score": null,
+      "shared_dataset_count": 2,
+      "shared_datasets": [{
+        "dataset_id": 41,
+        "title": "Rainfall observations",
+        "repository": "UCI",
+        "external_id": "320"
+      }],
+      "evidence": "2 shared discovered dataset(s): Rainfall observations",
+      "created_at": "2026-10-25T12:01:00Z"
+    }
+  }]
+}
+```
+
+Graphs with no persisted connections return `{"nodes": [], "edges": []}`.
+
 ## `POST /datasets/{dataset_id}/analyze`
 
 Analyzes a verified UCI dataset. `dataset_id` must use `uci:<positive integer>`. This path remains for UCI clients. External ids should use `POST /datasets/analyze`.

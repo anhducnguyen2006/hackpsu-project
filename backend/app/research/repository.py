@@ -13,6 +13,11 @@ from database.connection import get_connection
 logger = logging.getLogger(__name__)
 
 ResearchQuery = dict[str, Any]
+ResearchConnection = dict[str, Any]
+
+SEMANTIC_SIMILARITY = "SEMANTIC_SIMILARITY"
+SHARED_DATASET = "SHARED_DATASET"
+_RESEARCH_CONNECTION_TYPES = {SEMANTIC_SIMILARITY, SHARED_DATASET}
 
 
 def _vector_literal(embedding: Any) -> str:
@@ -103,6 +108,30 @@ def require_owned_query(query_id: int, user_sub: str) -> int:
     if found is None:
         raise ResearchQueryAccessError("Research query was not found.")
     return query_id
+
+
+def _normalize_connection_pair(
+    research_a_id: int, research_b_id: int
+) -> tuple[int, int]:
+    if not isinstance(research_a_id, int) or not isinstance(research_b_id, int):
+        raise ValueError("Research IDs must be integers")
+    if research_a_id <= 0 or research_b_id <= 0:
+        raise ValueError("Research IDs must be positive")
+    if research_a_id == research_b_id:
+        raise ValueError("A research connection requires two different research IDs")
+    return min(research_a_id, research_b_id), max(research_a_id, research_b_id)
+
+
+def _row_to_research_connection(row: tuple[Any, ...]) -> ResearchConnection:
+    return {
+        "id": int(row[0]),
+        "research_a_id": int(row[1]),
+        "research_b_id": int(row[2]),
+        "relationship_type": row[3],
+        "similarity_score": row[4],
+        "shared_dataset_count": int(row[5]),
+        "created_at": row[6],
+    }
 
 
 def save_research_question(
@@ -383,6 +412,261 @@ def _save_query_dataset_match_with_connection(
         """,
         (query_id, dataset_id, rank, relevance_score, explanation),
     )
+
+
+def upsert_research_connection(
+    research_a_id: int,
+    research_b_id: int,
+    relationship_type: str,
+    similarity_score: float | None = None,
+    shared_dataset_count: int = 0,
+) -> ResearchConnection:
+    """Insert or update one normalized edge between saved research questions."""
+    research_a_id, research_b_id = _normalize_connection_pair(
+        research_a_id, research_b_id
+    )
+    if relationship_type not in _RESEARCH_CONNECTION_TYPES:
+        raise ValueError(
+            "relationship_type must be SEMANTIC_SIMILARITY or SHARED_DATASET"
+        )
+    if shared_dataset_count < 0:
+        raise ValueError("shared_dataset_count must not be negative")
+
+    connection = None
+    try:
+        with get_connection() as connection:
+            row = _upsert_research_connection_with_connection(
+                connection,
+                research_a_id,
+                research_b_id,
+                relationship_type,
+                similarity_score,
+                shared_dataset_count,
+            )
+            if row is None:
+                raise RuntimeError("The research connection upsert returned no row")
+            connection.commit()
+            return row
+    except Exception:
+        if connection is not None:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+        raise
+
+
+def _upsert_research_connection_with_connection(
+    connection: Any,
+    research_a_id: int,
+    research_b_id: int,
+    relationship_type: str,
+    similarity_score: float | None = None,
+    shared_dataset_count: int = 0,
+) -> ResearchConnection:
+    """Upsert an edge inside a caller-owned transaction."""
+    research_a_id, research_b_id = _normalize_connection_pair(
+        research_a_id, research_b_id
+    )
+    if relationship_type not in _RESEARCH_CONNECTION_TYPES:
+        raise ValueError(
+            "relationship_type must be SEMANTIC_SIMILARITY or SHARED_DATASET"
+        )
+    if shared_dataset_count < 0:
+        raise ValueError("shared_dataset_count must not be negative")
+    row = connection.execute(
+        """
+        INSERT INTO research_connections
+            (research_a_id, research_b_id, relationship_type,
+             similarity_score, shared_dataset_count)
+        VALUES (%s, %s, %s, %s, %s)
+        ON CONFLICT (research_a_id, research_b_id, relationship_type)
+        DO UPDATE SET
+            similarity_score = EXCLUDED.similarity_score,
+            shared_dataset_count = EXCLUDED.shared_dataset_count
+        RETURNING id, research_a_id, research_b_id, relationship_type,
+                  similarity_score, shared_dataset_count, created_at
+        """,
+        (
+            research_a_id,
+            research_b_id,
+            relationship_type,
+            similarity_score,
+            shared_dataset_count,
+        ),
+    ).fetchone()
+    if row is None:
+        raise RuntimeError("The research connection upsert returned no row")
+    return _row_to_research_connection(row)
+
+
+def get_research_connections(research_id: int) -> list[ResearchConnection]:
+    """Return all edges touching one saved research question."""
+    if not isinstance(research_id, int) or research_id <= 0:
+        raise ValueError("research_id must be a positive integer")
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT id, research_a_id, research_b_id, relationship_type,
+                   similarity_score, shared_dataset_count, created_at
+            FROM research_connections
+            WHERE research_a_id = %s OR research_b_id = %s
+            ORDER BY created_at DESC, id DESC
+            """,
+            (research_id, research_id),
+        ).fetchall()
+        return [_row_to_research_connection(row) for row in rows]
+
+
+def get_shared_datasets(
+    research_a_id: int, research_b_id: int
+) -> list[dict[str, Any]]:
+    """Return exact datasets shared by two saved research questions."""
+    research_a_id, research_b_id = _normalize_connection_pair(
+        research_a_id, research_b_id
+    )
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT DISTINCT d.id, d.title, d.repository, d.external_id
+            FROM query_dataset_matches AS match_a
+            JOIN query_dataset_matches AS match_b
+              ON match_b.dataset_id = match_a.dataset_id
+             AND match_b.query_id = %s
+            JOIN datasets AS d ON d.id = match_a.dataset_id
+            WHERE match_a.query_id = %s
+            ORDER BY d.id
+            """,
+            (research_b_id, research_a_id),
+        ).fetchall()
+        return [
+            {
+                "dataset_id": int(row[0]),
+                "title": row[1],
+                "repository": row[2],
+                "external_id": row[3],
+            }
+            for row in rows
+        ]
+
+
+def get_research_graph(
+    limit: int = 100, research_id: int | None = None
+) -> dict[str, list[dict[str, Any]]]:
+    """Return a bounded saved-research graph without per-edge queries."""
+    if limit <= 0:
+        raise ValueError("limit must be positive")
+    if research_id is not None and (
+        not isinstance(research_id, int) or research_id <= 0
+    ):
+        raise ValueError("research_id must be a positive integer")
+
+    with get_connection() as connection:
+        edge_query = """
+            SELECT id, research_a_id, research_b_id, relationship_type,
+                   similarity_score, shared_dataset_count, created_at
+            FROM research_connections
+        """
+        edge_params: list[Any] = []
+        if research_id is not None:
+            edge_query += " WHERE research_a_id = %s OR research_b_id = %s"
+            edge_params.extend((research_id, research_id))
+        edge_query += " ORDER BY created_at DESC, id DESC LIMIT %s"
+        edge_params.append(limit)
+        edge_rows = connection.execute(edge_query, tuple(edge_params)).fetchall()
+        if not edge_rows:
+            return {"nodes": [], "edges": []}
+
+        edge_ids = [int(row[0]) for row in edge_rows]
+        research_ids = sorted(
+            {int(row[1]) for row in edge_rows}
+            | {int(row[2]) for row in edge_rows}
+        )
+        node_rows = connection.execute(
+            """
+            SELECT id, question, created_at
+            FROM research_queries
+            WHERE id = ANY(%s)
+            ORDER BY id
+            """,
+            (research_ids,),
+        ).fetchall()
+        dataset_rows = connection.execute(
+            """
+            SELECT connection.id, dataset.id, dataset.title,
+                   dataset.repository, dataset.external_id
+            FROM research_connections AS connection
+            JOIN query_dataset_matches AS match_a
+              ON match_a.query_id = connection.research_a_id
+            JOIN query_dataset_matches AS match_b
+              ON match_b.query_id = connection.research_b_id
+             AND match_b.dataset_id = match_a.dataset_id
+            JOIN datasets AS dataset ON dataset.id = match_a.dataset_id
+            WHERE connection.id = ANY(%s)
+              AND connection.relationship_type = 'SHARED_DATASET'
+            GROUP BY connection.id, dataset.id, dataset.title,
+                     dataset.repository, dataset.external_id
+            ORDER BY connection.id, dataset.id
+            """,
+            (edge_ids,),
+        ).fetchall()
+
+        datasets_by_edge: dict[int, list[dict[str, Any]]] = {}
+        for row in dataset_rows:
+            datasets_by_edge.setdefault(int(row[0]), []).append(
+                {
+                    "dataset_id": int(row[1]),
+                    "title": row[2],
+                    "repository": row[3],
+                    "external_id": row[4],
+                }
+            )
+        nodes = [
+            {
+                "data": {
+                    "id": f"research:{int(row[0])}",
+                    "research_id": int(row[0]),
+                    "type": "RESEARCH_QUESTION",
+                    "label": row[1],
+                    "question": row[1],
+                    "created_at": row[2],
+                }
+            }
+            for row in node_rows
+        ]
+        edges = []
+        for row in edge_rows:
+            edge_id = int(row[0])
+            relationship_type = row[3]
+            shared_datasets = datasets_by_edge.get(edge_id, [])
+            if relationship_type == SHARED_DATASET:
+                evidence = (
+                    f"{int(row[5])} shared discovered dataset(s): "
+                    + ", ".join(item["title"] for item in shared_datasets)
+                )
+            else:
+                evidence = (
+                    f"Cosine similarity between saved research embeddings: "
+                    f"{float(row[4]):.4f}"
+                    if row[4] is not None
+                    else "Saved research questions have a semantic similarity connection."
+                )
+            edges.append(
+                {
+                    "data": {
+                        "id": f"research-connection:{edge_id}",
+                        "source": f"research:{int(row[1])}",
+                        "target": f"research:{int(row[2])}",
+                        "relationship_type": relationship_type,
+                        "similarity_score": row[4],
+                        "shared_dataset_count": int(row[5]),
+                        "shared_datasets": shared_datasets,
+                        "evidence": evidence,
+                        "created_at": row[6],
+                    }
+                }
+            )
+        return {"nodes": nodes, "edges": edges}
 
 
 def persist_discovery_result(

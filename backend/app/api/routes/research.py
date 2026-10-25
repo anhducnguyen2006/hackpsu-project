@@ -9,6 +9,7 @@ from database.connection import DatabaseUnavailableError
 
 from app.api.schemas import (
     ResearchHistoryItem,
+    ResearchGraphResponse,
     ResearchSessionResponse,
     SimilarResearchItem,
     SimilarResearchRequest,
@@ -19,6 +20,7 @@ from app.research.repository import (
     get_research_question,
     get_research_session,
     list_recent_research_questions,
+    get_research_graph,
 )
 
 
@@ -80,6 +82,16 @@ def similar_research(
             # Embedding failure is an explicit empty result, not a saved-history claim.
             logger.warning("research similarity unavailable; returning no matches")
             return []
+
+
+@router.get("/graph", response_model=ResearchGraphResponse)
+def research_graph(
+    limit: int = Query(default=100, ge=1, le=500),
+    research_id: int | None = Query(default=None, ge=1),
+) -> ResearchGraphResponse:
+    """Return persisted research connections only; no graph generation occurs here."""
+    graph = get_research_graph(limit=limit, research_id=research_id)
+    return ResearchGraphResponse.model_validate(graph)
 
 
 @router.get("/{query_id}/session", response_model=ResearchSessionResponse)

@@ -154,6 +154,41 @@ export interface DatasetGraphResponse {
   edges: { data: DatasetGraphEdgeData }[];
 }
 
+export interface ResearchGraphNodeData {
+  id: string;
+  research_id: number;
+  type: "RESEARCH_QUESTION";
+  label: string;
+  question: string;
+  created_at: string;
+}
+
+export interface SharedResearchDataset {
+  dataset_id: number;
+  title: string;
+  repository: string;
+  external_id: string;
+}
+
+export type ResearchConnectionType = "SEMANTIC_SIMILARITY" | "SHARED_DATASET";
+
+export interface ResearchGraphEdgeData {
+  id: string;
+  source: string;
+  target: string;
+  relationship_type: ResearchConnectionType;
+  similarity_score: number | null;
+  shared_dataset_count: number;
+  shared_datasets: SharedResearchDataset[];
+  evidence: string;
+  created_at: string;
+}
+
+export interface ResearchGraphResponse {
+  nodes: { data: ResearchGraphNodeData }[];
+  edges: { data: ResearchGraphEdgeData }[];
+}
+
 export interface NumericSummary {
   count: number;
   mean: number | null;

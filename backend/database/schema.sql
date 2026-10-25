@@ -34,7 +34,29 @@ CREATE TABLE query_dataset_matches (
     PRIMARY KEY (query_id, dataset_id)
 );
 
--- 4. Reusable statistical profiles
+-- 4. Relationships between saved research questions
+CREATE TABLE research_connections (
+    id BIGSERIAL PRIMARY KEY,
+    research_a_id BIGINT NOT NULL REFERENCES research_queries(id) ON DELETE CASCADE,
+    research_b_id BIGINT NOT NULL REFERENCES research_queries(id) ON DELETE CASCADE,
+    relationship_type TEXT NOT NULL CHECK (
+        relationship_type IN ('SEMANTIC_SIMILARITY', 'SHARED_DATASET')
+    ),
+    similarity_score DOUBLE PRECISION,
+    shared_dataset_count INTEGER NOT NULL DEFAULT 0 CHECK (shared_dataset_count >= 0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT research_connections_ordered_pair CHECK (research_a_id < research_b_id),
+    CONSTRAINT research_connections_unique_edge
+        UNIQUE (research_a_id, research_b_id, relationship_type)
+);
+
+CREATE INDEX idx_research_connections_research_a
+ON research_connections(research_a_id);
+
+CREATE INDEX idx_research_connections_research_b
+ON research_connections(research_b_id);
+
+-- 5. Reusable statistical profiles
 CREATE TABLE dataset_profiles (
     id BIGSERIAL PRIMARY KEY,
     dataset_id BIGINT REFERENCES datasets(id),
@@ -47,7 +69,7 @@ CREATE TABLE dataset_profiles (
         UNIQUE (dataset_id, resource_key, source_version, profiler_version)
 );
 
--- 5. Question-specific assessments
+-- 6. Question-specific assessments
 CREATE TABLE research_assessments (
     id BIGSERIAL PRIMARY KEY,
     query_id BIGINT REFERENCES research_queries(id),
