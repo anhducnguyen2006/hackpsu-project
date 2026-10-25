@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="780" height="510" viewBox="0 0 780 510" role="img" aria-labelledby="title desc">
+<title id="title">The CSV still will not load.</title><desc id="desc">A practitioner describes missing values and formats across tools. Editorial paraphrase of Reddit · r/dataanalyst. Verified 25 Oct 2026.</desc>
+<rect width="780" height="510" rx="28" fill="#1c1e20"/>
+<rect x="48" y="47" width="7" height="27" rx="2" fill="#a6a6a8"/>
+<text x="72" y="69" font-family="Arial, sans-serif" font-size="28" fill="#bcbcc1">Workflow discussion</text>
+<text font-family="Arial, sans-serif" font-size="54" font-weight="600" letter-spacing="-1.3" fill="#eeeef0"><tspan x="48" y="150">The CSV still will not</tspan><tspan x="48" y="209">load.</tspan></text>
+<text font-family="Arial, sans-serif" font-size="31" fill="#c7c7cb"><tspan x="48" y="273">A practitioner describes missing values and</tspan><tspan x="48" y="312">formats across tools.</tspan></text>
+<text x="48" y="429" font-family="Arial, sans-serif" font-size="27" fill="#eeeef0">Reddit · r/dataanalyst</text>
+<text x="48" y="475" font-family="Arial, sans-serif" font-size="23" fill="#a9a9af">Editorial summary · Verified 25 Oct 2026</text>
+<path d="M694 72h28v28m-28 0 28-28" fill="none" stroke="#aaaab0" stroke-width="3"/>
+</svg>
