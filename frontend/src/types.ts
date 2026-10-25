@@ -49,11 +49,16 @@ export interface DatasetCardData {
 
 export interface ResearchInterpretation {
   original_research_question: string;
+  refined_question: string | null;
   research_subject: string;
   independent_variables: string[];
   dependent_variables: string[];
   target_population: string | null;
+  population: string | null;
+  geographic_scope: string | null;
+  temporal_scope: string | null;
   synonyms: string[];
+  assumptions_or_ambiguities: string[];
   search_terms: string[];
 }
 
