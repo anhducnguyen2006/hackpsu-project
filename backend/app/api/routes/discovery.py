@@ -7,13 +7,13 @@ from app.api.schemas import DiscoveryRequest, DiscoveryResponse
 from app.assessment.gemini import GeminiService
 from app.config import settings
 from app.demo import demo_search
-from app.discovery.search import DiscoveryService
+from app.discovery.search import DiscoveryService, build_external_providers
 from app.discovery.uci import UCIRepositoryService
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
 logger = logging.getLogger(__name__)
 repository = UCIRepositoryService(catalog_ttl=settings.uci_catalog_ttl_seconds)
-service = DiscoveryService(repository, GeminiService())
+service = DiscoveryService(repository, GeminiService(), build_external_providers())
 
 
 @router.post("/search", response_model=DiscoveryResponse)
