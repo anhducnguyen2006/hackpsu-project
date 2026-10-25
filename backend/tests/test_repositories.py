@@ -303,8 +303,25 @@ def test_multiple_sources_are_aggregated_and_terms_are_forwarded() -> None:
     assert any("rainfall" in query for query in dataverse.queries)
     assert any("crop" in query for query in dataverse.queries)
     assert any("yield" in query for query in zenodo.queries)
+    assert len(dataverse.queries) == 1
+    assert len(zenodo.queries) == 1
     assert warnings == []
     assert mode == "gemini"
+
+
+def test_external_provider_results_are_cached_for_repeated_searches() -> None:
+    dataverse = FakeProvider("Harvard Dataverse", [_external_record("dataverse", "1")])
+    service = DiscoveryService(
+        FakeUCIRepository(),
+        FakeGemini(),
+        [dataverse],
+        FakeEmbedding(),
+    )
+
+    service.search("Does rainfall affect crop yield?", 8)
+    service.search("Does rainfall affect crop yield?", 4)
+
+    assert len(dataverse.queries) == 1
 
 
 def test_duplicate_dois_are_removed_before_reranking() -> None:

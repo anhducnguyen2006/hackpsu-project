@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.api.schemas import RelevanceAssessmentBatch, ResearchInterpretation, UCIRecord
-from app.assessment.gemini import GeminiService, GeminiUnavailableError
+from app.assessment.gemini import GeminiService, GeminiUnavailableError, _thinking_config
 
 
 def _interpretation() -> ResearchInterpretation:
@@ -26,6 +26,18 @@ def _candidate(index: int) -> UCIRecord:
         repository_url=f"https://archive.ics.uci.edu/dataset/{index}",
         variables=["studytime", "G3"],
     )
+
+
+def test_thinking_config_matches_gemini_model_family() -> None:
+    from google.genai import types
+
+    modern = _thinking_config(types, "gemini-3.8-flash")
+    legacy = _thinking_config(types, "gemini-2.5-flash")
+
+    assert modern is not None
+    assert modern.thinking_level == types.ThinkingLevel.LOW
+    assert legacy is not None
+    assert legacy.thinking_budget == 0
 
 
 class FakeClient:

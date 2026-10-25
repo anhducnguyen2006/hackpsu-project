@@ -33,13 +33,38 @@ def _failure_label(error: Exception) -> str:
     return "request failure"
 
 
+def _thinking_config(types: Any, model_name: str) -> Any | None:
+    """Build thinking settings compatible with the configured Gemini family.
+
+    Gemini 3+ uses ``thinking_level`` while older Gemini models reject that
+    field. Keep this compatibility logic in one place so a model change in
+    ``GEMINI_MODEL`` does not turn every structured request into a 400 error.
+    """
+    thinking_config_type = getattr(types, "ThinkingConfig", None)
+    if thinking_config_type is None:
+        return None
+    normalized_model = model_name.lower().strip()
+    if normalized_model.startswith(("gemini-3", "gemini-4")):
+        thinking_levels = getattr(types, "ThinkingLevel", None)
+        low = getattr(thinking_levels, "LOW", None) if thinking_levels else None
+        return thinking_config_type(thinking_level=low) if low is not None else None
+    if normalized_model in {"gemini-2.5-flash", "gemini-2.5-flash-lite"}:
+        # These short extraction/ranking prompts do not need hidden reasoning.
+        # A zero budget also avoids spending the response token cap on thoughts.
+        return thinking_config_type(thinking_budget=0)
+    return None
+
+
 def _config(types: Any, schema: Any, *, max_output_tokens: int) -> Any:
-    return types.GenerateContentConfig(
-        response_mime_type="application/json",
-        response_schema=schema,
-        max_output_tokens=max_output_tokens,
-        thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW),
-    )
+    config = {
+        "response_mime_type": "application/json",
+        "response_schema": schema,
+        "max_output_tokens": max_output_tokens,
+    }
+    thinking_config = _thinking_config(types, settings.gemini_model)
+    if thinking_config is not None:
+        config["thinking_config"] = thinking_config
+    return types.GenerateContentConfig(**config)
 
 
 def _ensure_complete_response(response: Any, operation: str) -> None:
@@ -208,12 +233,9 @@ class GeminiService:
             response = client.models.generate_content(
                 model=settings.gemini_model,
                 contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=ResearchAssessment,
-                    max_output_tokens=2200,
-                ),
+                config=_config(types, ResearchAssessment, max_output_tokens=2200),
             )
+            _ensure_complete_response(response, "suitability")
             self._log_usage(response, "suitability")
             parsed = getattr(response, "parsed", None)
             if parsed is not None:
@@ -240,9 +262,9 @@ class GeminiService:
             http_options=types.HttpOptions(
                 retry_options=types.HttpRetryOptions(
                     attempts=2,
-                    initialDelay=1,
-                    maxDelay=4,
-                    httpStatusCodes=[408, 500, 502, 503, 504],
+                    initial_delay=1,
+                    max_delay=4,
+                    http_status_codes=[408, 500, 502, 503, 504],
                 ),
                 timeout=settings.gemini_request_timeout_ms,
             ),
