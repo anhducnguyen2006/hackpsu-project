@@ -8,7 +8,6 @@ from fastapi.testclient import TestClient
 from app.api.routes import research as research_route
 from app.main import app
 from app.research import repository
-from tests.auth_tokens import bearer
 
 
 class FakeConnection:
@@ -116,10 +115,7 @@ def test_graph_endpoint_returns_typed_cytoscape_compatible_shape(monkeypatch) ->
         },
     )
 
-    response = TestClient(app).get(
-        "/api/v1/research/graph?limit=5&research_id=7",
-        headers=bearer(),
-    )
+    response = TestClient(app).get("/api/v1/research/graph?limit=5&research_id=7")
 
     assert response.status_code == 200
     assert response.json()["nodes"][0]["data"]["id"] == "research:7"
@@ -133,7 +129,7 @@ def test_graph_endpoint_returns_empty_graph(monkeypatch) -> None:
         lambda limit, research_id: {"nodes": [], "edges": []},
     )
 
-    response = TestClient(app).get("/api/v1/research/graph", headers=bearer())
+    response = TestClient(app).get("/api/v1/research/graph")
 
     assert response.status_code == 200
     assert response.json() == {"nodes": [], "edges": []}

@@ -9,16 +9,21 @@ class Settings(BaseSettings):
     database_url: str | None = None
     gemini_api_key: str | None = None
     google_api_key: str | None = None
-    gemini_model: str = "gemini-3.8-flash"
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_interpret_thinking_level: str = "low"
     backend_cors_origins: str = "http://localhost:5173"
     uci_catalog_ttl_seconds: int = 900
     external_request_timeout_seconds: float = 12.0
     gemini_request_timeout_ms: int = 15000
+    gemini_retry_attempts: int = 1
+    # Empty by default: enable only after a bounded model benchmark succeeds.
+    gemini_fallback_model: str | None = None
+    gemini_overall_timeout_ms: int = 16000
+    gemini_fallback_reserve_ms: int = 6000
+    gemini_provider_min_timeout_ms: int = 10000
+    uci_data_cache_ttl_seconds: int = 900
     discovery_source_concurrency: int = 3
     discovery_candidate_limit: int = 12
-    discovery_metadata_concurrency: int = 4
-    discovery_max_resource_bytes: int = 52_428_800
-    discovery_relevance_floor: float = 0.20
     embedding_model_name: str = "BAAI/bge-small-en-v1.5"
     embedding_model_version: str = "1"
     embedding_top_k: int = 12
@@ -28,32 +33,10 @@ class Settings(BaseSettings):
     dataverse_enabled: bool = True
     dataverse_api_url: str = "https://dataverse.harvard.edu/api/search"
     dataverse_results_limit: int = 5
-    # Exact Harvard Dataverse object-store hostnames allowed only as redirects
-    # from dataverse.harvard.edu/api/access/datafile/{id}. Never an initial host.
-    # Comma-separated. No wildcards. Observed production host: dvn-cloud-iqss.s3.amazonaws.com.
-    dataverse_storage_hosts: str = "dvn-cloud-iqss.s3.amazonaws.com"
     zenodo_enabled: bool = True
     zenodo_api_url: str = "https://zenodo.org/api/records/"
     zenodo_results_limit: int = 5
     demo_mode: bool = False
-    # Auth0 API access tokens. Empty values fail closed on protected routes.
-    # Audience is the API identifier from the Auth0 Dashboard, not the SPA client ID.
-    auth0_domain: str = ""
-    auth0_audience: str = ""
-    auth0_issuer: str = ""
-    auth0_jwks_cache_seconds: int = 600
-    auth0_required_scope: str = ""
-    dev_routes_enabled: bool = False
-    # Process-local limits per authenticated subject. Not shared across workers.
-    auth_discovery_limit: int = 10
-    auth_discovery_window_seconds: int = 60
-    auth_discovery_concurrency: int = 2
-    auth_analysis_limit: int = 6
-    auth_analysis_window_seconds: int = 60
-    auth_analysis_concurrency: int = 1
-    auth_similarity_limit: int = 20
-    auth_similarity_window_seconds: int = 60
-    auth_similarity_concurrency: int = 2
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[1] / ".env",
