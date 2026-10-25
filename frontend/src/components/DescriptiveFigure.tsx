@@ -1,0 +1,18 @@
+import type { ExploratoryAnalysisResponse } from "../types";
+import { EvidenceTag } from "./EvidenceTag";
+
+export function DescriptiveFigure({ exploration }: { exploration: ExploratoryAnalysisResponse }) {
+  const chart = { left: 72, top: 30, width: 620, height: 280, max: 20 };
+  const y = (mean: number) => chart.top + chart.height - (mean / chart.max) * chart.height;
+  return <section className="descriptive-section" aria-labelledby="descriptive-title"><div className="section-title-row"><div><span className="eyebrow">04 / Descriptive figure</span><h2 id="descriptive-title">Study time &amp; final grade</h2></div><EvidenceTag label="Computed profile" explanation="Grouped descriptive values are cached Pandas results; no inferential test is presented." /></div>
+    <div className="figure-summary"><span>{exploration.analyzed_observation_count} analyzed observations</span><span>{exploration.excluded_observation_count} excluded</span><span>studytime: ordinal / encoded category</span></div>
+    <div className="figure-grid"><figure className="mean-figure"><svg viewBox="0 0 760 390" role="img" aria-labelledby="mean-title mean-desc"><title id="mean-title">Mean final grade by studytime category</title><desc id="mean-desc">Four category means from the cached UCI Student Performance profile. A data table follows.</desc>
+      {[0, 5, 10, 15, 20].map((tick) => { const position = y(tick); return <g key={tick}><line x1={chart.left} y1={position} x2={chart.left + chart.width} y2={position} className="figure-guide" /><text x={chart.left - 14} y={position + 4} textAnchor="end">{tick}</text></g>; })}
+      <line x1={chart.left} y1={chart.top} x2={chart.left} y2={chart.top + chart.height} className="figure-axis" /><line x1={chart.left} y1={chart.top + chart.height} x2={chart.left + chart.width} y2={chart.top + chart.height} className="figure-axis" />
+      {exploration.categories.map((item, index) => { const x = chart.left + 80 + index * 150; const mean = item.mean_outcome; return <g key={String(item.category)}><line x1={x} y1={chart.top + chart.height} x2={x} y2={mean === null ? chart.top + chart.height : y(mean)} className="figure-stem" /><circle cx={x} cy={mean === null ? chart.top + chart.height : y(mean)} r="6" className="figure-point" /><text x={x} y={chart.top + chart.height + 26} textAnchor="middle">{String(item.category)}</text><text x={x} y={chart.top + chart.height + 46} textAnchor="middle" className="figure-count">n = {item.observations}</text></g>; })}
+      <text x={chart.left + chart.width / 2} y="382" textAnchor="middle">studytime category (encoded)</text><text x="15" y="175" transform="rotate(-90 15 175)" textAnchor="middle">Mean G3 grade (0–20)</text>
+    </svg><figcaption>Fig. 03 / Mean final grade (G3) by documented studytime category. Points show group means; stems support reading against the grade scale.</figcaption></figure>
+    <div className="figure-data"><span className="data-label">Data equivalent</span><div className="table-scroll"><table aria-label="Grouped descriptive data"><caption>Cached grouped values; n denotes observed records</caption><thead><tr><th scope="col">studytime</th><th scope="col">n</th><th scope="col">Mean G3</th><th scope="col">Median G3</th></tr></thead><tbody>{exploration.categories.map((item) => <tr key={String(item.category)}><th scope="row">{String(item.category)}</th><td>{item.observations}</td><td>{item.mean_outcome?.toFixed(2) ?? "Unavailable"}</td><td>{item.median_outcome ?? "Unavailable"}</td></tr>)}</tbody></table></div></div></div>
+    <div className="figure-limitations">{exploration.limitations.map((limitation) => <p key={limitation}>{limitation}</p>)}</div>
+  </section>;
+}
