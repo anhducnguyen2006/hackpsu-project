@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 import re
 from typing import Any, Literal
 
@@ -9,6 +10,13 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, mod
 class DiscoveryRequest(BaseModel):
     research_question: str = Field(min_length=10, max_length=2000)
     limit: int = Field(default=8, ge=1, le=25)
+
+
+class ResearchHistoryItem(BaseModel):
+    id: int
+    question: str
+    normalized_question: str
+    created_at: datetime
 
 
 class ResearchInterpretation(BaseModel):
