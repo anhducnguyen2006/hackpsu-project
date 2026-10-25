@@ -21,8 +21,9 @@ const liveAnalysis: DatasetAnalysisResponse = {
     columns: [
       {
         name: "storage_ml",
+        variable_description: null,
         data_type: "float64",
-        measurement_type: "numeric",
+        measurement_type: "continuous",
         missing_count: 0,
         missing_fraction: 0,
         unique_count: 100,
