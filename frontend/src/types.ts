@@ -45,6 +45,7 @@ export interface DatasetCardData {
   matched_research_variables?: string[];
   missing_or_unverified_variables?: string[];
   classification?: "relevant" | "partially_relevant" | "irrelevant";
+  analysis_eligibility?: AnalysisEligibility;
 }
 
 export interface ResearchInterpretation {
