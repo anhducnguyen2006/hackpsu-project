@@ -5,12 +5,16 @@ backend/.env
 __pycache__/
 *.py[cod]
 .pytest_cache/
+*.log
 
 backend/.venv/
+node_modules/
 frontend/node_modules/
 frontend/dist/
 *.tsbuildinfo
 
 .agents/
 .docs/
+.hallmark/
 .playwright-mcp/
+.superpowers/
