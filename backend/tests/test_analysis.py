@@ -249,6 +249,28 @@ def test_gemini_failure_preserves_verified_profile() -> None:
     assert any("AI suitability assessment unavailable" in warning for warning in response.warnings)
 
 
+def test_python_recomputes_final_score_from_criteria() -> None:
+    from app.assessment.suitability import calculate_final_score
+
+    scored = calculate_final_score(assessment())
+    assert scored.final_score == 80
+    assert "Python recomputed" in scored.score_explanation
+
+
+def test_malformed_gemini_assessment_keeps_profile(monkeypatch) -> None:
+    class MalformedGemini(FakeGemini):
+        def assess_suitability(self, question, parsed, dataset, profile):
+            return {"not": "a valid ResearchAssessment"}
+
+    response = DatasetAnalysisService(FakeRepository(), MalformedGemini()).analyze(
+        "uci:320",
+        AnalysisRequest(research_question="Does study time affect academic performance?"),
+    )
+    assert response.profile is not None
+    assert response.assessment is None
+    assert response.ai_assessment_status == "unavailable"
+
+
 def test_exploratory_analysis_computes_ordinal_group_statistics() -> None:
     response = ExploratoryAnalyzer().analyze(
         "uci:320",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
+from datetime import date
 from typing import Any
 
 import httpx
@@ -9,6 +10,13 @@ from pydantic import ValidationError
 
 from app.api.schemas import DatasetRecord, DatasetVariable
 from app.config import settings
+from app.discovery.eligibility import (
+    FileAssessment,
+    assess_tabular_file,
+    embargo_status,
+    inconclusive_resource,
+    summarize_files,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +42,7 @@ class HarvardDataverseService:
         )
         self.api_url = api_url
         self.default_limit = default_limit
+        self._verified: dict[str, DatasetRecord] = {}
 
     def search(
         self, search_terms: Iterable[str], limit: int | None = None
@@ -100,8 +109,8 @@ class HarvardDataverseService:
             if global_id.lower().startswith("doi:")
             else cls._text(item.get("doi"))
         )
-        file_count = item.get("fileCount")
-        data_available = file_count > 0 if isinstance(file_count, int) else None
+        # fileCount is not evidence of a public tabular file. Search hits stay
+        # unverified until published version metadata is inspected.
         return DatasetRecord(
             id=f"dataverse:{source_id}",
             source=cls.source,
@@ -112,8 +121,350 @@ class HarvardDataverseService:
             variables=cls._variables(item.get("variables")),
             subjects=cls._text_list(item.get("subjects")),
             doi=doi,
-            data_available=data_available,
+            data_available=None,
+            eligibility_status="unverified",
+            eligibility_reason="Dataverse search did not include file metadata.",
+            download_performed=False,
         )
+
+    def verify(self, record: DatasetRecord, today: date | None = None) -> DatasetRecord:
+        """Resolve published file metadata. Does not download file bytes."""
+        persistent_id = record.doi or record.source_id
+        cached = self._verified.get(persistent_id)
+        if cached is not None:
+            return cached
+        url = self._dataset_metadata_url()
+        try:
+            response = self.client.get(url, params={"persistentId": persistent_id})
+            self._raise_for_status(response)
+            self._reject_oversized(response)
+            payload = response.json()
+        except DataverseRepositoryError:
+            raise
+        except Exception as error:
+            raise DataverseRepositoryError(
+                f"Harvard Dataverse metadata lookup failed: {error}"
+            ) from error
+        verified = self._apply_version_metadata(record, payload, today or date.today())
+        if len(self._verified) > 128:
+            self._verified.clear()
+        self._verified[persistent_id] = verified
+        return verified
+
+    def _dataset_metadata_url(self) -> str:
+        root = self.api_url.split("/api/", 1)[0].rstrip("/")
+        return f"{root}/api/datasets/:persistentId/"
+
+    def _apply_version_metadata(
+        self, record: DatasetRecord, payload: object, today: date
+    ) -> DatasetRecord:
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, dict):
+            return self._failed(record, "Dataverse dataset metadata had no data object.")
+        version = data.get("latestVersion")
+        if not isinstance(version, dict):
+            return self._failed(record, "Dataverse dataset metadata had no published version.")
+        state = str(version.get("versionState") or "").upper()
+        if state != "RELEASED":
+            return record.model_copy(update={
+                "eligibility_status": "unsupported",
+                "eligibility_reason": "Dataverse dataset is not a released published version.",
+                "data_available": False,
+                "download_performed": False,
+                "download_resources": [],
+            })
+        version_number = version.get("versionNumber")
+        minor = version.get("versionMinorNumber")
+        source_version = None
+        if isinstance(version_number, int):
+            source_version = f"{version_number}.{minor}" if isinstance(minor, int) else str(version_number)
+        files = version.get("files")
+        files_declared = isinstance(files, list)
+        candidates: list = []
+        assessments = [
+            self._assess_file(item, today, candidates)
+            for item in files
+            if isinstance(item, dict)
+        ] if files_declared else []
+        status, reason, resources = summarize_files(assessments, files_declared=files_declared)
+        citation = self._citation_fields(version)
+        title = citation.get("title") or self._citation_title(version) or record.title
+        description = citation.get("description") or record.description
+        subjects = citation.get("subjects") or record.subjects
+        keywords = citation.get("keywords") or record.keywords
+        authors = citation.get("authors") or record.authors
+        geographic = citation.get("geographic_coverage") or record.geographic_coverage
+        temporal = citation.get("temporal_coverage") or record.temporal_coverage
+        publisher = citation.get("publisher") or record.publisher
+        publication_date = citation.get("publication_date") or record.publication_date
+        license_name = citation.get("license") or record.license
+        return record.model_copy(update={
+            "title": title,
+            "description": description,
+            "subjects": subjects,
+            "keywords": keywords,
+            "authors": authors,
+            "geographic_coverage": geographic,
+            "temporal_coverage": temporal,
+            "publisher": publisher,
+            "publication_date": publication_date,
+            "license": license_name,
+            "eligibility_status": status,
+            "eligibility_reason": reason,
+            "download_resources": resources,
+            "verification_candidates": candidates,
+            "data_available": status == "supported_resource_verified",
+            "download_performed": False,
+            "source_version": source_version,
+        })
+
+    def _assess_file(
+        self, item: dict[str, Any], today: date, candidates: list | None = None
+    ) -> FileAssessment:
+        data_file = item.get("dataFile") if isinstance(item.get("dataFile"), dict) else {}
+        file_id = data_file.get("id")
+        file_id_text = str(file_id) if isinstance(file_id, int) or (
+            isinstance(file_id, str) and file_id.strip()
+        ) else None
+        access = "public"
+        embargo = item.get("embargo") if isinstance(item.get("embargo"), dict) else None
+        if embargo is not None:
+            embargo_state = embargo_status(
+                embargo.get("dateAvailable") if isinstance(embargo.get("dateAvailable"), str) else None,
+                today,
+            )
+            if embargo_state == "unverified":
+                access = "unverified"
+            elif embargo_state == "embargoed":
+                access = "embargoed"
+        if item.get("restricted") is True or data_file.get("restricted") is True:
+            access = "restricted"
+        filename = data_file.get("filename") if isinstance(data_file.get("filename"), str) else None
+        original_name = data_file.get("originalFileName") if isinstance(data_file.get("originalFileName"), str) else None
+        if original_name is None and isinstance(item.get("label"), str):
+            original_name = item.get("label")
+        size = data_file.get("filesize")
+        size_bytes = size if isinstance(size, int) and size >= 0 else None
+        checksum = None
+        checksum_value = data_file.get("checksum")
+        if isinstance(checksum_value, dict) and isinstance(checksum_value.get("value"), str):
+            checksum = checksum_value["value"]
+        elif isinstance(data_file.get("md5"), str):
+            checksum = data_file["md5"]
+        url = None
+        if file_id_text:
+            root = self.api_url.split("/api/", 1)[0].rstrip("/")
+            url = f"{root}/api/access/datafile/{file_id_text}"
+        content_type = data_file.get("contentType") if isinstance(data_file.get("contentType"), str) else None
+        original_format = data_file.get("originalFileFormat") if isinstance(data_file.get("originalFileFormat"), str) else None
+        if candidates is not None:
+            candidate = inconclusive_resource(
+                url=url,
+                filename=filename,
+                original_filename=original_name,
+                content_type=content_type,
+                original_format=original_format,
+                size_bytes=size_bytes,
+                checksum=checksum,
+                file_id=file_id_text,
+                access_status=access,
+                max_bytes=settings.discovery_max_resource_bytes,
+            )
+            if candidate is not None:
+                candidates.append(candidate)
+        return assess_tabular_file(
+            url=url,
+            filename=filename,
+            original_filename=original_name,
+            content_type=content_type,
+            original_format=original_format,
+            size_bytes=size_bytes,
+            checksum=checksum,
+            file_id=file_id_text,
+            access_status=access,
+            max_bytes=settings.discovery_max_resource_bytes,
+        )
+
+    @staticmethod
+    def _citation_title(version: dict[str, Any]) -> str | None:
+        fields = HarvardDataverseService._citation_field_list(version)
+        for field in fields:
+            if (
+                field.get("typeName") == "title"
+                and isinstance(field.get("value"), str)
+                and field["value"].strip()
+            ):
+                return field["value"].strip()
+        return None
+
+    @classmethod
+    def _citation_fields(cls, version: dict[str, Any]) -> dict[str, Any]:
+        """Extract verified citation metadata. Missing fields stay absent."""
+        extracted: dict[str, Any] = {}
+        for field in cls._citation_field_list(version):
+            type_name = field.get("typeName")
+            value = field.get("value")
+            if type_name == "title" and isinstance(value, str) and value.strip():
+                extracted["title"] = value.strip()
+            elif type_name == "dsDescription":
+                description = cls._compound_text(value, "dsDescriptionValue")
+                if description:
+                    extracted["description"] = description
+            elif type_name == "author":
+                authors = cls._compound_list(value, "authorName")
+                if authors:
+                    extracted["authors"] = authors
+            elif type_name == "subject":
+                subjects = cls._string_or_list(value)
+                if subjects:
+                    extracted["subjects"] = subjects
+            elif type_name == "keyword":
+                keywords = cls._compound_list(value, "keywordValue")
+                if keywords:
+                    extracted["keywords"] = keywords
+            elif type_name == "producer":
+                producers = cls._compound_list(value, "producerName")
+                if producers:
+                    extracted["publisher"] = producers[0]
+            elif type_name in {"distributionDate", "dateOfDeposit"} and isinstance(
+                value, str
+            ) and value.strip():
+                extracted.setdefault("publication_date", value.strip())
+            elif type_name == "geographicCoverage":
+                places = cls._geographic_values(value)
+                if places:
+                    extracted["geographic_coverage"] = places
+            elif type_name == "timePeriodCovered":
+                periods = cls._temporal_values(value)
+                if periods:
+                    extracted["temporal_coverage"] = periods
+            elif type_name in {"license", "rights"}:
+                license_name = cls._license_value(value)
+                if license_name:
+                    extracted["license"] = license_name
+        return extracted
+
+    @staticmethod
+    def _citation_field_list(version: dict[str, Any]) -> list[dict[str, Any]]:
+        blocks = version.get("metadataBlocks")
+        citation = blocks.get("citation") if isinstance(blocks, dict) else None
+        fields = citation.get("fields") if isinstance(citation, dict) else None
+        if not isinstance(fields, list):
+            return []
+        return [field for field in fields if isinstance(field, dict)]
+
+    @classmethod
+    def _compound_text(cls, value: object, key: str) -> str | None:
+        values = cls._compound_list(value, key)
+        if not values:
+            return None
+        return " ".join(values)
+
+    @classmethod
+    def _compound_list(cls, value: object, key: str) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        items: list[str] = []
+        for entry in value:
+            if not isinstance(entry, dict):
+                continue
+            nested = entry.get(key)
+            if isinstance(nested, dict):
+                text = cls._text(nested.get("value"))
+            else:
+                text = cls._text(nested)
+            if text and text not in items:
+                items.append(text)
+        return items
+
+    @classmethod
+    def _string_or_list(cls, value: object) -> list[str]:
+        if isinstance(value, str):
+            text = cls._text(value)
+            return [text] if text else []
+        if not isinstance(value, list):
+            return []
+        items: list[str] = []
+        for entry in value:
+            text = cls._text(entry) if not isinstance(entry, dict) else cls._text(
+                entry.get("value")
+            )
+            if text and text not in items:
+                items.append(text)
+        return items
+
+    @classmethod
+    def _geographic_values(cls, value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        places: list[str] = []
+        for entry in value:
+            if not isinstance(entry, dict):
+                text = cls._text(entry)
+                if text and text not in places:
+                    places.append(text)
+                continue
+            for key in ("country", "state", "city", "otherGeographicCoverage"):
+                nested = entry.get(key)
+                text = (
+                    cls._text(nested.get("value"))
+                    if isinstance(nested, dict)
+                    else cls._text(nested)
+                )
+                if text and text not in places:
+                    places.append(text)
+        return places
+
+    @classmethod
+    def _temporal_values(cls, value: object) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        periods: list[str] = []
+        for entry in value:
+            if not isinstance(entry, dict):
+                text = cls._text(entry)
+                if text and text not in periods:
+                    periods.append(text)
+                continue
+            start = entry.get("timePeriodCoveredStart")
+            end = entry.get("timePeriodCoveredEnd")
+            start_text = (
+                cls._text(start.get("value")) if isinstance(start, dict) else cls._text(start)
+            )
+            end_text = cls._text(end.get("value")) if isinstance(end, dict) else cls._text(end)
+            if start_text and end_text:
+                period = f"{start_text}–{end_text}"
+            else:
+                period = start_text or end_text
+            if period and period not in periods:
+                periods.append(period)
+        return periods
+
+    @classmethod
+    def _license_value(cls, value: object) -> str | None:
+        if isinstance(value, str):
+            return cls._text(value)
+        if isinstance(value, dict):
+            return cls._text(value.get("value") or value.get("name") or value.get("uri"))
+        return None
+
+    @staticmethod
+    def _failed(record: DatasetRecord, reason: str) -> DatasetRecord:
+        return record.model_copy(update={
+            "eligibility_status": "verification_failed",
+            "eligibility_reason": reason,
+            "data_available": False,
+            "download_performed": False,
+            "download_resources": [],
+        })
+
+    @staticmethod
+    def _reject_oversized(response: httpx.Response) -> None:
+        content = getattr(response, "content", b"")
+        if isinstance(content, (bytes, bytearray)) and len(content) > 2_000_000:
+            raise DataverseRepositoryError(
+                "Harvard Dataverse metadata response exceeded the size limit."
+            )
 
     @staticmethod
     def _variables(value: object) -> list[DatasetVariable]:

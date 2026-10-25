@@ -7,6 +7,7 @@ ResearchLens is an AI-assisted scientific dataset discovery and evaluation proto
 ## Documents
 
 - [API reference](./API.md)
+- [Authentication](./AUTHENTICATION.md)
 - [Architecture](./ARCHITECTURE.md)
 - [Engineering conventions](./CONVENTIONS.md)
 - [Data storage and persistence](./DATABASE.md)

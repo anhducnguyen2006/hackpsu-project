@@ -4,7 +4,9 @@ from fastapi.testclient import TestClient
 
 from app.api import schemas
 from app.api.routes import discovery as discovery_route
+from app.auth import AuthenticatedPrincipal
 from app.main import app
+from tests.auth_tokens import bearer
 
 
 def _interpretation() -> schemas.ResearchInterpretation:
@@ -68,11 +70,17 @@ def test_successful_discovery_persists_original_normalized_question_and_results(
 
     response = TestClient(app).post(
         "/api/v1/discovery/search",
-        json={"research_question": "How does study time relate to grades?", "limit": 8},
+        headers=bearer(),
+        json={
+            "research_question": "How does study time relate to grades?",
+            "limit": 8,
+            "user_sub": "auth0|attacker",
+        },
     )
 
     assert response.status_code == 200
     assert captured[0]["question"] == "How does study time relate to grades?"
+    assert captured[0]["user_sub"] == "auth0|user-a"
     assert captured[0]["normalized_question"] == "study time and academic performance"
     assert captured[0]["datasets"][0].source_id == "320"
 
@@ -89,7 +97,12 @@ def test_zero_result_discovery_persists_query_without_datasets(monkeypatch) -> N
 
     response = TestClient(app).post(
         "/api/v1/discovery/search",
-        json={"research_question": "How does study time relate to grades?", "limit": 8},
+        headers=bearer(),
+        json={
+            "research_question": "How does study time relate to grades?",
+            "limit": 8,
+            "user_sub": "auth0|attacker",
+        },
     )
 
     assert response.status_code == 200
@@ -105,10 +118,12 @@ def test_repeated_discovery_attempts_persistence_each_time(monkeypatch) -> None:
     client = TestClient(app)
     first = client.post(
         "/api/v1/discovery/search",
+        headers=bearer(),
         json={"research_question": "How does study time relate to grades?", "limit": 8},
     )
     second = client.post(
         "/api/v1/discovery/search",
+        headers=bearer(),
         json={"research_question": "How does study time relate to grades?", "limit": 8},
     )
 
@@ -127,12 +142,21 @@ def test_database_failure_does_not_fail_discovery_response(monkeypatch) -> None:
 
     response = TestClient(app).post(
         "/api/v1/discovery/search",
-        json={"research_question": "How does study time relate to grades?", "limit": 8},
+        headers=bearer(),
+        json={
+            "research_question": "How does study time relate to grades?",
+            "limit": 8,
+            "user_sub": "auth0|attacker",
+        },
     )
 
     assert response.status_code == 200
     assert response.json()["datasets"][0]["dataset_id"] == "uci:320"
-    assert response.json()["warnings"] == []
+    assert response.json()["research_query_id"] is None
+    assert any(
+        "Research history could not be opened" in warning
+        for warning in response.json()["warnings"]
+    )
 
 
 def test_discovery_response_does_not_wait_for_slow_background_write(monkeypatch) -> None:
@@ -153,6 +177,7 @@ def test_discovery_response_does_not_wait_for_slow_background_write(monkeypatch)
             research_question="How does study time relate to grades?", limit=8
         ),
         tasks,
+        AuthenticatedPrincipal(sub="auth0|user-a"),
     )
 
     response_elapsed = time.perf_counter() - started
@@ -175,6 +200,7 @@ def test_background_persistence_failure_is_logged_and_does_not_raise(monkeypatch
         "normalized question",
         [_dataset().model_dump(mode="json")],
         None,
+        "auth0|user-a",
     )
 
     assert "background persistence failed" in caplog.text
@@ -200,7 +226,7 @@ def test_graph_updates_run_after_persistence_commit(monkeypatch) -> None:
     )
 
     discovery_route._persist_discovery_result_background(
-        "Question", "normalized question", [], None
+        "Question", "normalized question", [], None, "auth0|user-a"
     )
 
     assert events == [("persist", 41), ("semantic", 41), ("shared", 41)]
@@ -237,7 +263,12 @@ def test_demo_discovery_does_not_persist_cached_datasets(monkeypatch) -> None:
 
     response = TestClient(app).post(
         "/api/v1/discovery/search",
-        json={"research_question": "How does study time relate to grades?", "limit": 8},
+        headers=bearer(),
+        json={
+            "research_question": "How does study time relate to grades?",
+            "limit": 8,
+            "user_sub": "auth0|attacker",
+        },
     )
 
     assert response.status_code == 200

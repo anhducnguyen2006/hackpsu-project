@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import type { AuthorizedFetch } from "../auth/api";
+import { protectedRequestError } from "../auth/api";
 import type { ResearchHistoryItem, ResearchSession, SavedAssessment, SavedDatasetMatch } from "../types";
 
 function formatTimestamp(timestamp: string) {
@@ -24,7 +26,7 @@ function Assessment({ assessment, index }: { assessment: SavedAssessment; index:
   return <article className="saved-assessment" key={`${String(assessment.dataset_id)}-${index}`}><div><span className="data-label">Dataset {assessment.dataset_id}</span><h3>Persisted suitability assessment</h3>{summary && <p>{summary}</p>}{assessment.model && <p className="muted">Model: {assessment.model}{assessment.assessment_version ? ` · ${assessment.assessment_version}` : ""}</p>}</div><strong>{score === null ? "Score unavailable" : score}</strong></article>;
 }
 
-export function PastResearch({ apiBase, selectedQueryId, onSelectQuery, onOpenConnections }: { apiBase?: string; selectedQueryId: number | null; onSelectQuery: (queryId: number | null) => void; onOpenConnections?: () => void }) {
+export function PastResearch({ apiBase, authorizedFetch, selectedQueryId, onSelectQuery, onOpenConnections }: { apiBase?: string; authorizedFetch?: AuthorizedFetch; selectedQueryId: number | null; onSelectQuery: (queryId: number | null) => void; onOpenConnections?: () => void }) {
   const [history, setHistory] = useState<ResearchHistoryItem[]>([]);
   const [selected, setSelected] = useState<ResearchSession | null>(null);
   const [loading, setLoading] = useState(true);
@@ -34,19 +36,20 @@ export function PastResearch({ apiBase, selectedQueryId, onSelectQuery, onOpenCo
 
   useEffect(() => {
     if (!apiBase) { setLoading(false); setError("Past research is unavailable until the backend is connected."); return; }
+    if (!authorizedFetch) { setLoading(false); setHistory([]); setError("Log in to view your saved research."); return; }
     let active = true;
     setLoading(true); setError("");
-    fetch(`${apiBase}/api/v1/research/history?limit=100`).then((response) => { if (!response.ok) throw new Error("Past research could not be loaded right now."); return response.json() as Promise<ResearchHistoryItem[]>; }).then((items) => { if (active) setHistory(items); }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "Past research could not be loaded right now."); }).finally(() => { if (active) setLoading(false); });
+    authorizedFetch(`${apiBase}/api/v1/research/history?limit=100`).then((response) => { if (!response.ok) throw new Error(protectedRequestError(response.status, "Past research could not be loaded right now.")); return response.json() as Promise<ResearchHistoryItem[]>; }).then((items) => { if (active) setHistory(items); }).catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : "Past research could not be loaded right now."); }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [apiBase]);
+  }, [apiBase, authorizedFetch]);
 
   useEffect(() => {
-    if (selectedQueryId === null || !apiBase) { setSelected(null); return; }
+    if (selectedQueryId === null || !apiBase || !authorizedFetch) { setSelected(null); return; }
     let active = true;
     setDetailLoading(true); setDetailError("");
-    fetch(`${apiBase}/api/v1/research/${selectedQueryId}/session`).then((response) => { if (!response.ok) throw new Error(response.status === 404 ? "This saved research session no longer exists." : "The saved research session could not be loaded."); return response.json() as Promise<ResearchSession>; }).then((item) => { if (active) setSelected(item); }).catch((cause) => { if (active) setDetailError(cause instanceof Error ? cause.message : "The saved research session could not be loaded."); }).finally(() => { if (active) setDetailLoading(false); });
+    authorizedFetch(`${apiBase}/api/v1/research/${selectedQueryId}/session`).then((response) => { if (!response.ok) throw new Error(response.status === 404 ? "This saved research session no longer exists." : protectedRequestError(response.status, "The saved research session could not be loaded.")); return response.json() as Promise<ResearchSession>; }).then((item) => { if (active) setSelected(item); }).catch((cause) => { if (active) setDetailError(cause instanceof Error ? cause.message : "The saved research session could not be loaded."); }).finally(() => { if (active) setDetailLoading(false); });
     return () => { active = false; };
-  }, [apiBase, selectedQueryId]);
+  }, [apiBase, authorizedFetch, selectedQueryId]);
 
   return <section className="history-page" aria-labelledby="history-title"><div className="history-masthead"><div><p className="eyebrow">Research instrument / archive</p><h1 id="history-title">Past research</h1><p className="section-deck">Return to saved questions and see the context preserved for each session.</p></div><div className="history-masthead-actions"><span className="evidence-tag">Persistent history</span>{onOpenConnections && <button type="button" className="primary-action" onClick={onOpenConnections}>Research Connections <span aria-hidden="true">↗</span></button>}</div></div>
     {loading && <p className="empty-state" role="status">Loading saved research…</p>}

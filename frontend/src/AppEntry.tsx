@@ -1,20 +1,14 @@
 import type { ReactNode } from "react";
-import { lazy, Suspense, useSyncExternalStore } from "react";
+import { lazy, Suspense } from "react";
+import type { AuthorizedFetch } from "./auth/api";
 import App from "./App";
 
 const LandingPage = lazy(() => import("./landing/LandingPage"));
 
-function subscribeLocation(listener: () => void) {
-  window.addEventListener("popstate", listener);
-  return () => window.removeEventListener("popstate", listener);
-}
-
-const currentPath = () => window.location.pathname;
-
-export default function AppEntry({ authControls }: { authControls?: ReactNode }) {
-  const isLanding = useSyncExternalStore(subscribeLocation, currentPath) === "/";
-  if (!isLanding) return <App authControls={authControls} />;
-  return <Suspense fallback={<main aria-busy="true"><p>Opening DataOPedia…</p><a href="/dashboard">Open research preview</a></main>}>
-    <LandingPage authControls={authControls} />
+export default function AppEntry({ authControls, authorizedFetch }: { authControls?: ReactNode; authorizedFetch?: AuthorizedFetch }) {
+  const isLanding = window.location.pathname === "/landing" || window.location.pathname === "/landing/";
+  if (!isLanding) return <App authControls={authControls} authorizedFetch={authorizedFetch} />;
+  return <Suspense fallback={<main aria-busy="true"><p>Opening DataOPedia…</p><a href="/">Open research preview</a></main>}>
+    <LandingPage />
   </Suspense>;
 }

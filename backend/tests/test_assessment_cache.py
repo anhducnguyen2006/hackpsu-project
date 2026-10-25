@@ -158,7 +158,7 @@ def test_changed_prompt_version_misses_assessment_cache(monkeypatch) -> None:
     DatasetAnalysisService(repository, FakeGemini()).analyze("uci:320", _request())
     monkeypatch.setattr(
         "app.analysis.service.GeminiService.SUITABILITY_PROMPT_VERSION",
-        "suitability-prompt-v2",
+        "suitability-prompt-v3",
     )
     second_gemini = FakeGemini()
 
