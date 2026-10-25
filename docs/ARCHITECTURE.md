@@ -12,7 +12,7 @@ flowchart TD
   API --> DISC[DiscoveryService]
   DISC --> INT[Gemini interpretation]
   DISC --> CAT[UCI catalog REST API]
-  DISC --> RANK[Gemini metadata reranking]
+  DISC --> RANK[Local embedding concept rank fusion]
   API --> ANALYSIS[DatasetAnalysisService]
   ANALYSIS --> UCI[UCI metadata and fetch_ucirepo]
   ANALYSIS --> PROFILE[Pandas/NumPy profiler]
@@ -42,7 +42,7 @@ The frontend currently concentrates workflow UI in `src/App.tsx`, with API types
 2. Gemini interprets concepts when available; deterministic keyword interpretation is the fallback.
 3. UCI catalog metadata is retrieved and filtered.
 4. A bounded set of candidates is enriched from UCI metadata.
-5. Gemini may rerank only verified candidate metadata.
+5. Local embeddings rank verified metadata against the full question and independent concepts; Gemini is not called for normal candidate reranking.
 6. The user expands a result and requests analysis.
 7. `fetch_ucirepo` supplies the original DataFrame.
 8. Pandas/NumPy compute the profile.
@@ -61,7 +61,7 @@ Preliminary relevance is a metadata-only discovery signal. Research suitability 
 
 ## Resilience
 
-The discovery service uses process-local caches, bounded candidate enrichment, explicit fallback modes, timeouts, and bounded Gemini retries. Dataset analysis caches by dataset and normalized question. DEMO_MODE bypasses external calls for its supported cached workflow.
+The discovery service uses process-local caches, bounded candidate enrichment and repository concurrency, explicit fallback modes, timeouts, and cached dataset embeddings keyed by source identity, metadata content hash, and model version. Dataset analysis caches by dataset and normalized question. DEMO_MODE bypasses external calls for its supported cached workflow.
 
 ## Limitations
 

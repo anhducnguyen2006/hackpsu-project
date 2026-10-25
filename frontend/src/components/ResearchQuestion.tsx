@@ -1,9 +1,17 @@
 import { useState, type FormEvent } from "react";
 
-export function ResearchQuestion({ exampleQuestion, onExploreExample }: { exampleQuestion: string; onExploreExample: () => void }) {
+export function ResearchQuestion({ exampleQuestion, onExploreExample, onSearch }: { exampleQuestion: string; onExploreExample: () => void; onSearch?: (question: string) => Promise<void> | void }) {
   const [question, setQuestion] = useState("");
   const [status, setStatus] = useState("");
-  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); setStatus("Static preview: live search is not connected"); }
+  const [loading, setLoading] = useState(false);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!onSearch) { setStatus("Static preview: live search is not connected"); return; }
+    if (question.trim().length < 10) { setStatus("Enter a research question with at least 10 characters."); return; }
+    setLoading(true); setStatus("");
+    try { await onSearch(question.trim()); } catch (error) { setStatus(error instanceof Error ? error.message : "Search failed. Please try again."); }
+    finally { setLoading(false); }
+  }
   return <section className="landing-page" aria-labelledby="landing-title">
     <div className="landing-grid">
       <div className="landing-intro">
@@ -13,7 +21,7 @@ export function ResearchQuestion({ exampleQuestion, onExploreExample }: { exampl
         <form onSubmit={submit} className="question-form">
           <label htmlFor="research-question">Research question</label>
           <textarea id="research-question" rows={3} value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="Write your research question here" />
-          <div className="question-actions"><button className="primary-action" type="submit">Find datasets</button><span className="muted">Live search is unavailable in this preview.</span></div>
+          <div className="question-actions"><button className="primary-action" type="submit" disabled={loading}>{loading ? "Searching…" : "Find datasets"}</button><span className="muted">{onSearch ? "Searches verified repository metadata." : "Live search is unavailable in this preview."}</span></div>
           {status && <p role="status" className="form-status">{status}</p>}
         </form>
         <div className="example-callout"><span className="data-label">Cached example question</span><p>{exampleQuestion}</p><button className="secondary-action" type="button" onClick={onExploreExample}>Explore the example</button></div>

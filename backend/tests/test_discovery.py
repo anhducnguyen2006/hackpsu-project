@@ -1,4 +1,4 @@
-from app.api.schemas import RelevanceAssessmentBatch, ResearchInterpretation, UCIRecord
+from app.api.schemas import ResearchInterpretation, UCIRecord
 from app.discovery.search import DiscoveryService
 from app.demo import demo_search
 
@@ -15,29 +15,16 @@ class FakeGemini:
             search_terms=["student", "studytime", "performance"],
         )
 
-    def rerank(self, question, interpretation, candidates):
-        return RelevanceAssessmentBatch(
-            assessments=[
-                {
-                    "dataset_id": "uci:320",
-                    "preliminary_relevance_score": 92,
-                    "score_confidence": "high",
-                    "relevance_explanation": "Verified outcome and variable metadata match.",
-                    "matched_research_variables": ["studytime", "G3"],
-                    "missing_or_unverified_variables": ["causal effect"],
-                    "classification": "relevant",
-                },
-                {
-                    "dataset_id": "uci:999",
-                    "preliminary_relevance_score": 99,
-                    "score_confidence": "high",
-                    "relevance_explanation": "This ID is not a supplied candidate.",
-                    "matched_research_variables": [],
-                    "missing_or_unverified_variables": [],
-                    "classification": "relevant",
-                },
-            ]
-        )
+
+class FakeEmbedding:
+    def score_queries(self, queries, candidates):
+        return [
+            {candidate.id: 0.9 - index * 0.01 for index, candidate in enumerate(candidates)}
+            for _ in queries
+        ]
+
+    def rank(self, question, candidates, top_k):
+        return [(candidate, 0.9 - index * 0.01) for index, candidate in enumerate(candidates[:top_k])]
 
 
 class FakeRepository:
@@ -69,13 +56,28 @@ class FakeRepository:
 
 def test_discovery_returns_only_repository_candidates() -> None:
     interpretation, datasets, warnings, mode = DiscoveryService(
-        FakeRepository(), FakeGemini()
+        FakeRepository(), FakeGemini(), embedding_service=FakeEmbedding()
     ).search("Does study time affect grades?", 8)
 
     assert interpretation is not None
     assert [dataset.dataset_id for dataset in datasets] == ["uci:320"]
-    assert datasets[0].preliminary_relevance_score is not None
-    assert "preliminary" in datasets[0].relevance_explanation
+    assert datasets[0].semantic_similarity_score is not None
+    assert datasets[0].score_type == "semantic_similarity"
+    assert "not a probability" in datasets[0].relevance_explanation
+    assert warnings == []
+    assert mode == "gemini"
+
+
+def test_normal_search_does_not_call_gemini_reranking() -> None:
+    class NoRerankGemini(FakeGemini):
+        def rerank(self, *args, **kwargs):
+            raise AssertionError("Gemini reranking must not run in normal search")
+
+    _, datasets, warnings, mode = DiscoveryService(
+        FakeRepository(), NoRerankGemini(), embedding_service=FakeEmbedding()
+    ).search("Does study time affect grades?", 8)
+
+    assert datasets
     assert warnings == []
     assert mode == "gemini"
 
@@ -86,7 +88,7 @@ def test_gemini_failure_uses_labeled_fallback() -> None:
             raise RuntimeError("invalid API key")
 
     _, datasets, warnings, mode = DiscoveryService(
-        FakeRepository(), BrokenGemini()
+        FakeRepository(), BrokenGemini(), embedding_service=FakeEmbedding()
     ).search("Does study time affect grades?", 8)
 
     assert datasets
@@ -95,13 +97,23 @@ def test_gemini_failure_uses_labeled_fallback() -> None:
     assert mode == "keyword_fallback"
 
 
+def test_fallback_interpretation_preserves_affect_and_geography_structure() -> None:
+    interpretation = DiscoveryService._fallback_interpretation(
+        "How does rainfall affect crop production in Nepal?"
+    )
+
+    assert interpretation.independent_variables == ["rainfall"]
+    assert interpretation.dependent_variables == ["crop production"]
+    assert interpretation.target_population == "Nepal"
+
+
 def test_repository_failure_returns_empty_results() -> None:
     class BrokenRepository:
         def discover_catalog(self):
             raise RuntimeError("timeout")
 
     _, datasets, warnings, mode = DiscoveryService(
-        BrokenRepository(), FakeGemini()
+        BrokenRepository(), FakeGemini(), embedding_service=FakeEmbedding()
     ).search("Does study time affect grades?", 8)
 
     assert datasets == []
@@ -111,7 +123,7 @@ def test_repository_failure_returns_empty_results() -> None:
 
 def test_discovery_cache_avoids_repeating_repository_work() -> None:
     repository = FakeRepository()
-    service = DiscoveryService(repository, FakeGemini())
+    service = DiscoveryService(repository, FakeGemini(), embedding_service=FakeEmbedding())
     service.search("Does study time affect grades?", 8)
     first_call_count = repository.catalog_calls
     service.search("Does study time affect grades?", 8)
@@ -132,9 +144,9 @@ def test_demo_search_is_labeled_and_does_not_match_unrelated_questions() -> None
 
 def test_reranking_is_bounded_to_twelve_candidates() -> None:
     class CountingGemini(FakeGemini):
-        def rerank(self, question, interpretation, candidates):
+        def score_queries(self, queries, candidates):
             assert len(candidates) == 12
-            return RelevanceAssessmentBatch(assessments=[])
+            return [{candidate.id: 0.5 for candidate in candidates} for _ in queries]
 
     records = [
         UCIRecord(
@@ -154,6 +166,8 @@ def test_reranking_is_bounded_to_twelve_candidates() -> None:
         def get_metadata(self, dataset_id: int):
             return records[dataset_id - 1]
 
-    DiscoveryService(ManyRepository(), CountingGemini()).search(
+    DiscoveryService(
+        ManyRepository(), FakeGemini(), embedding_service=CountingGemini()
+    ).search(
         "Does study time affect grades?", 8
     )

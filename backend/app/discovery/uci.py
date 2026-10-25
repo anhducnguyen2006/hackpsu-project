@@ -6,13 +6,39 @@ from typing import Any
 import httpx
 import numpy as np
 import pandas as pd
-from ucimlrepo import fetch_ucirepo
 
-from app.api.schemas import UCIRecord
+from app.api.schemas import DatasetRecord, DatasetVariable, UCIRecord
 
 
 class UCIRepositoryError(RuntimeError):
     """Raised when a UCI repository operation fails."""
+
+
+def dataset_record_from_uci(record: UCIRecord) -> DatasetRecord:
+    """Adapt legacy UCI metadata without inventing fields absent from it."""
+
+    source_id = (
+        record.dataset_id.split(":", 1)[1]
+        if ":" in record.dataset_id
+        else record.dataset_id
+    )
+    return DatasetRecord(
+        id=record.dataset_id,
+        source="UCI Machine Learning Repository",
+        source_id=source_id,
+        title=record.title,
+        description=record.description,
+        landing_page_url=record.repository_url,
+        variables=[
+            DatasetVariable(
+                name=variable,
+                description=record.variable_descriptions.get(variable),
+            )
+            for variable in record.variables
+        ],
+        subjects=[record.subject_area] if record.subject_area else [],
+        data_available=record.data_available,
+    )
 
 
 class UCIRepositoryService:
@@ -88,6 +114,8 @@ class UCIRepositoryService:
                 f"UCI dataset {dataset_id} exceeds supported metadata size limits."
             )
         try:
+            from ucimlrepo import fetch_ucirepo
+
             repository_dataset = fetch_ucirepo(id=dataset_id)
             metadata = self._metadata(repository_dataset)
             dataframe = self._original_dataframe(repository_dataset)
