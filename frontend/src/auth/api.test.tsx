@@ -1,4 +1,3 @@
-import { auth0Audience } from "../auth/config";
 import { fetchWithAccessToken, type AuthorizedFetch } from "../auth/api";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -23,7 +22,6 @@ it("sends the Auth0 access token as a bearer credential", async () => {
   expect(getAccessToken).toHaveBeenCalledOnce();
   const headers = new Headers(fetchMock.mock.calls[0][1]?.headers);
   expect(headers.get("Authorization")).toBe("Bearer header.payload.signature");
-  expect(auth0Audience).toBe("");
 });
 
 it("does not request a token when the API audience is not configured", async () => {

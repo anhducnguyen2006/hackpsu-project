@@ -12,7 +12,13 @@ const authorizedFetch: AuthorizedFetch = (input, init) => {
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
+function usePreviewEnv() {
+  vi.stubEnv("VITE_API_BASE_URL", "");
+  vi.stubEnv("VITE_AUTH0_AUDIENCE", "");
+}
+
 it("shows five local stages and never requests data", async () => {
+  usePreviewEnv();
   const request = vi.spyOn(globalThis, "fetch");
   render(<App />);
   expect(screen.getByText("DataOPedia")).toBeVisible();
@@ -27,6 +33,7 @@ it("shows five local stages and never requests data", async () => {
 });
 
 it("walks the cached example through all five stages without requests", async () => {
+  usePreviewEnv();
   const request = vi.spyOn(globalThis, "fetch");
   render(<App />);
   expect(screen.getByRole("heading", { name: /From question to evidence/i })).toBeVisible();
@@ -42,6 +49,7 @@ it("walks the cached example through all five stages without requests", async ()
 });
 
 it("keeps an edited question separate from fixed example results", async () => {
+  usePreviewEnv();
   render(<App />);
   await userEvent.type(screen.getByRole("textbox", { name: "Research question" }), "Does sleep affect memory?");
   await userEvent.click(screen.getByRole("button", { name: "Find datasets" }));
