@@ -181,6 +181,51 @@ def test_background_persistence_failure_is_logged_and_does_not_raise(monkeypatch
     assert "secret database url" not in caplog.text
 
 
+def test_graph_updates_run_after_persistence_commit(monkeypatch) -> None:
+    events: list[tuple[str, int]] = []
+    monkeypatch.setattr(
+        discovery_route,
+        "persist_discovery_result",
+        lambda **kwargs: events.append(("persist", 41)) or 41,
+    )
+    monkeypatch.setattr(
+        discovery_route,
+        "generate_semantic_connections",
+        lambda research_id: events.append(("semantic", research_id)) or object(),
+    )
+    monkeypatch.setattr(
+        discovery_route,
+        "generate_shared_dataset_connections",
+        lambda research_id: events.append(("shared", research_id)) or object(),
+    )
+
+    discovery_route._persist_discovery_result_background(
+        "Question", "normalized question", [], None
+    )
+
+    assert events == [("persist", 41), ("semantic", 41), ("shared", 41)]
+
+
+def test_graph_update_failure_is_logged_without_exposing_error(monkeypatch, caplog) -> None:
+    monkeypatch.setattr(
+        discovery_route,
+        "generate_semantic_connections",
+        lambda research_id: (_ for _ in ()).throw(
+            RuntimeError("secret database url")
+        ),
+    )
+    monkeypatch.setattr(
+        discovery_route,
+        "generate_shared_dataset_connections",
+        lambda research_id: object(),
+    )
+
+    discovery_route._update_research_connections_background(41)
+
+    assert "research_connections background task failed" in caplog.text
+    assert "secret database url" not in caplog.text
+
+
 def test_demo_discovery_does_not_persist_cached_datasets(monkeypatch) -> None:
     calls = []
     monkeypatch.setattr(discovery_route.settings, "demo_mode", True)

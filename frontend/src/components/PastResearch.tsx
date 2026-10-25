@@ -24,7 +24,7 @@ function Assessment({ assessment, index }: { assessment: SavedAssessment; index:
   return <article className="saved-assessment" key={`${String(assessment.dataset_id)}-${index}`}><div><span className="data-label">Dataset {assessment.dataset_id}</span><h3>Persisted suitability assessment</h3>{summary && <p>{summary}</p>}{assessment.model && <p className="muted">Model: {assessment.model}{assessment.assessment_version ? ` · ${assessment.assessment_version}` : ""}</p>}</div><strong>{score === null ? "Score unavailable" : score}</strong></article>;
 }
 
-export function PastResearch({ apiBase, selectedQueryId, onSelectQuery }: { apiBase?: string; selectedQueryId: number | null; onSelectQuery: (queryId: number | null) => void }) {
+export function PastResearch({ apiBase, selectedQueryId, onSelectQuery, onOpenConnections }: { apiBase?: string; selectedQueryId: number | null; onSelectQuery: (queryId: number | null) => void; onOpenConnections?: () => void }) {
   const [history, setHistory] = useState<ResearchHistoryItem[]>([]);
   const [selected, setSelected] = useState<ResearchSession | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,7 +48,7 @@ export function PastResearch({ apiBase, selectedQueryId, onSelectQuery }: { apiB
     return () => { active = false; };
   }, [apiBase, selectedQueryId]);
 
-  return <section className="history-page" aria-labelledby="history-title"><div className="history-masthead"><div><p className="eyebrow">Research instrument / archive</p><h1 id="history-title">Past research</h1><p className="section-deck">Return to saved questions and see the context preserved for each session.</p></div><span className="evidence-tag">Persistent history</span></div>
+  return <section className="history-page" aria-labelledby="history-title"><div className="history-masthead"><div><p className="eyebrow">Research instrument / archive</p><h1 id="history-title">Past research</h1><p className="section-deck">Return to saved questions and see the context preserved for each session.</p></div><div className="history-masthead-actions"><span className="evidence-tag">Persistent history</span>{onOpenConnections && <button type="button" className="primary-action" onClick={onOpenConnections}>Research Connections <span aria-hidden="true">↗</span></button>}</div></div>
     {loading && <p className="empty-state" role="status">Loading saved research…</p>}
     {!loading && error && <p className="error-state" role="alert">{error}</p>}
     {!loading && !error && history.length === 0 && <div className="empty-state" role="status"><h2>No saved research yet</h2><p>Questions saved after a live discovery will appear here.</p></div>}

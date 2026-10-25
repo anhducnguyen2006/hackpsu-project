@@ -36,6 +36,47 @@ class ResearchSessionResponse(ResearchHistoryItem):
     assessments: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class ResearchGraphNodeData(BaseModel):
+    id: str
+    research_id: int
+    type: Literal["RESEARCH_QUESTION"] = "RESEARCH_QUESTION"
+    label: str
+    question: str
+    created_at: datetime
+
+
+class SharedResearchDataset(BaseModel):
+    dataset_id: int
+    title: str
+    repository: str
+    external_id: str
+
+
+class ResearchGraphEdgeData(BaseModel):
+    id: str
+    source: str
+    target: str
+    relationship_type: Literal["SEMANTIC_SIMILARITY", "SHARED_DATASET"]
+    similarity_score: float | None = None
+    shared_dataset_count: int = 0
+    shared_datasets: list[SharedResearchDataset] = Field(default_factory=list)
+    evidence: str
+    created_at: datetime
+
+
+class ResearchGraphNode(BaseModel):
+    data: ResearchGraphNodeData
+
+
+class ResearchGraphEdge(BaseModel):
+    data: ResearchGraphEdgeData
+
+
+class ResearchGraphResponse(BaseModel):
+    nodes: list[ResearchGraphNode]
+    edges: list[ResearchGraphEdge]
+
+
 class ResearchInterpretation(BaseModel):
     original_research_question: str
     refined_question: str | None = None
