@@ -107,7 +107,8 @@ def test_profile_marks_ordinal_values_and_matches_verified_columns() -> None:
         {"studytime": "weekly study time", "G3": "final grade"},
     )
     studytime = next(column for column in profile.columns if column.name == "studytime")
-    assert studytime.measurement_type == "ordinal_or_encoded_numeric"
+    assert studytime.measurement_type == "ordinal"
+    assert studytime.numeric_summary is None
     assert [(item.value, item.count) for item in studytime.categorical_summary] == [
         (1, 1),
         (2, 1),
@@ -122,6 +123,37 @@ def test_profile_marks_ordinal_values_and_matches_verified_columns() -> None:
     )
 
 
+def test_profile_marks_integer_quantities_as_discrete_numeric() -> None:
+    profile = DataProfiler().profile(
+        pd.DataFrame({"age": [45, 52, 60, None], "creatinine": [1.2, 1.4, 1.8, 2.1]}),
+        variable_descriptions={"age": "age of the patient", "creatinine": "serum creatinine"},
+    )
+
+    age = next(column for column in profile.columns if column.name == "age")
+    creatinine = next(column for column in profile.columns if column.name == "creatinine")
+
+    assert age.measurement_type == "discrete_numeric"
+    assert age.numeric_summary is not None
+    assert creatinine.measurement_type == "continuous"
+
+
+def test_profile_preserves_declared_categorical_measurement() -> None:
+    profile = DataProfiler().profile(
+        pd.DataFrame({"chest-pain": [1, 2, 3, 4], "ecg": [0, 1, 2, 2]}),
+        variable_descriptions={
+            "chest-pain": "chest pain type",
+            "ecg": "resting electrocardiographic results",
+        },
+        variable_types={"chest-pain": "Categorical", "ecg": "Categorical"},
+    )
+
+    assert [column.measurement_type for column in profile.columns] == [
+        "categorical",
+        "categorical",
+    ]
+    assert all(column.numeric_summary is None for column in profile.columns)
+
+
 def test_analysis_is_cached_and_score_is_python_recomputed() -> None:
     repository = FakeRepository()
     gemini = FakeGemini()
@@ -133,10 +165,23 @@ def test_analysis_is_cached_and_score_is_python_recomputed() -> None:
 
     assert first.model_dump() == second.model_dump()
     assert repository.fetch_calls == 1
-    assert gemini.interpret_calls == 1
+    assert gemini.interpret_calls == 0
     assert gemini.assessment_calls == 1
     assert first.assessment is not None
     assert first.assessment.final_score == 80
+
+
+def test_analysis_reuses_fetched_dataset_and_profile_for_changed_question() -> None:
+    repository = FakeRepository()
+    service = DatasetAnalysisService(repository, FakeGemini())
+
+    service.analyze("uci:320", AnalysisRequest(research_question="Does study time affect grades?"))
+    service.analyze(
+        "uci:320",
+        AnalysisRequest(research_question="Does weekly study time affect academic performance?"),
+    )
+
+    assert repository.fetch_calls == 1
 
 
 def test_demo_analysis_reports_only_verified_statistics() -> None:
@@ -204,6 +249,28 @@ def test_gemini_failure_preserves_verified_profile() -> None:
     assert any("AI suitability assessment unavailable" in warning for warning in response.warnings)
 
 
+def test_python_recomputes_final_score_from_criteria() -> None:
+    from app.assessment.suitability import calculate_final_score
+
+    scored = calculate_final_score(assessment())
+    assert scored.final_score == 80
+    assert "Python recomputed" in scored.score_explanation
+
+
+def test_malformed_gemini_assessment_keeps_profile(monkeypatch) -> None:
+    class MalformedGemini(FakeGemini):
+        def assess_suitability(self, question, parsed, dataset, profile):
+            return {"not": "a valid ResearchAssessment"}
+
+    response = DatasetAnalysisService(FakeRepository(), MalformedGemini()).analyze(
+        "uci:320",
+        AnalysisRequest(research_question="Does study time affect academic performance?"),
+    )
+    assert response.profile is not None
+    assert response.assessment is None
+    assert response.ai_assessment_status == "unavailable"
+
+
 def test_exploratory_analysis_computes_ordinal_group_statistics() -> None:
     response = ExploratoryAnalyzer().analyze(
         "uci:320",
@@ -211,7 +278,7 @@ def test_exploratory_analysis_computes_ordinal_group_statistics() -> None:
         "studytime",
         "G3",
     )
-    assert response.independent_measurement_type == "ordinal_or_encoded_numeric"
+    assert response.independent_measurement_type == "ordinal"
     assert response.analyzed_observation_count == 5
     assert response.excluded_observation_count == 1
     assert [(item.category, item.observations, item.mean_outcome) for item in response.categories] == [

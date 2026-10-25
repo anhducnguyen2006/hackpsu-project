@@ -108,9 +108,8 @@ def test_crop_yield_only_dataset_is_retained_with_outcome_match():
 
 def test_dataset_matching_both_concepts_ranks_above_unrelated_dataset():
     (_, datasets, _, _), _ = search()
-    assert [dataset.dataset_id for dataset in datasets[:3]] == ["uci:3", "uci:1", "uci:2"]
-    unrelated = next(dataset for dataset in datasets if dataset.dataset_id == "uci:4")
-    assert unrelated.semantic_similarity_score < datasets[0].semantic_similarity_score
+    assert [dataset.dataset_id for dataset in datasets] == ["uci:3", "uci:1", "uci:2"]
+    assert all(dataset.semantic_similarity_score is not None and dataset.semantic_similarity_score >= 0.20 for dataset in datasets)
 
 
 def test_missing_geographic_metadata_is_not_fabricated():

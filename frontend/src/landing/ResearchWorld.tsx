@@ -1,6 +1,7 @@
+import { useRef } from "react";
 import { useThree } from "@react-three/fiber";
 import { ANNULUS_CENTER, arrivalCamera, SPHERE_CENTER, SPHERE_ROTATION } from "./sceneModel";
-import { PALETTE } from "./palette";
+import { LandingPaletteContext, useAnimatedLandingPalette } from "./palette";
 import type { WorldHandles } from "./worldHandles";
 import WireSphere from "./WireSphere";
 import ParticleField from "./ParticleField";
@@ -9,11 +10,13 @@ import SpatialAnnulus from "./SpatialAnnulus";
 import DeepParticleNetwork from "./DeepParticleNetwork";
 
 export default function ResearchWorld({ handles }: { handles: WorldHandles }) {
+  const PALETTE = useAnimatedLandingPalette();
+  const fogArgs = useRef<[string, number, number]>([PALETTE.ice, 9, 25]);
   const { size } = useThree();
   const view = arrivalCamera(size.width, size.height);
 
-  return <>
-    <fog attach="fog" args={[PALETTE.ice, 9, 25]} />
+  return <LandingPaletteContext.Provider value={PALETTE}>
+    <fog attach="fog" args={fogArgs.current} color={PALETTE.ice} />
     <group ref={handles.world} name="research-world">
       <group ref={handles.annulus} name="annulus-rig" position={ANNULUS_CENTER} rotation={view.annulusRotation} scale={view.annulusScale}>
         <group ref={handles.annulusAmbient} name="annulus-ambient"><SpatialAnnulus mobile={view.portrait} /></group>
@@ -27,5 +30,5 @@ export default function ResearchWorld({ handles }: { handles: WorldHandles }) {
       </group>
       <DeepParticleNetwork handles={handles} />
     </group>
-  </>;
+  </LandingPaletteContext.Provider>;
 }

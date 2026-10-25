@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from app.api import schemas
 from app.api.routes import discovery as discovery_route
 from app.main import app
+from tests.auth_tokens import bearer
 
 
 class FakeDiscoveryService:
@@ -40,6 +41,7 @@ def test_discovery_route_serializes_interpretation_and_results(monkeypatch) -> N
 
     response = TestClient(app).post(
         "/api/v1/discovery/search",
+        headers=bearer(),
         json={"research_question": "How does study time relate to grades?", "limit": 12},
     )
 
@@ -56,10 +58,12 @@ def test_discovery_route_validates_question_and_limit() -> None:
 
     short_question = client.post(
         "/api/v1/discovery/search",
+        headers=bearer(),
         json={"research_question": "short", "limit": 12},
     )
     invalid_limit = client.post(
         "/api/v1/discovery/search",
+        headers=bearer(),
         json={"research_question": "How does study time relate to grades?", "limit": 26},
     )
 
@@ -72,6 +76,7 @@ def test_discovery_route_labels_demo_response(monkeypatch) -> None:
 
     response = TestClient(app).post(
         "/api/v1/discovery/search",
+        headers=bearer(),
         json={"research_question": "How does study time relate to grades?", "limit": 12},
     )
 

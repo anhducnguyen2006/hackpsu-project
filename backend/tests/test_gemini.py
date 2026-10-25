@@ -96,8 +96,12 @@ def test_interpretation_cache_makes_exactly_one_gemini_call() -> None:
     assert calls == 1
 
 
-def test_interpretation_unavailable_raises_without_inventing_refinement() -> None:
-    with pytest.raises(GeminiUnavailableError):
+def test_interpretation_unavailable_raises_without_inventing_refinement(monkeypatch) -> None:
+    from app.assessment import gemini as gemini_module
+
+    monkeypatch.setattr(gemini_module.settings, "gemini_api_key", None)
+    monkeypatch.setattr(gemini_module.settings, "google_api_key", None)
+    with pytest.raises(GeminiUnavailableError, match="GEMINI_API_KEY is not configured"):
         GeminiService().interpret("How does pollution affect health?")
 
 

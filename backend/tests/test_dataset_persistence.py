@@ -148,11 +148,16 @@ def test_persist_discovery_result_commits_query_datasets_and_matches_atomically(
         "Original question",
         "normalized question",
         [result("320", "Student Performance", 0.91), result("856", "Higher Education", 0.72)],
+        user_sub="auth0|user-a",
     )
 
     assert query_id == 99
     assert len(connection.calls) == 5
-    assert connection.calls[0][1] == ("Original question", "normalized question")
+    assert connection.calls[0][1] == (
+        "Original question",
+        "normalized question",
+        "auth0|user-a",
+    )
     assert connection.commits == 1
     assert connection.rollbacks == 0
 
@@ -166,6 +171,7 @@ def test_persist_discovery_result_rolls_back_partial_writes(monkeypatch) -> None
             "Original question",
             None,
             [result("320", "Student Performance", 0.91), result("856", "Higher Education", 0.72)],
+            user_sub="auth0|user-a",
         )
 
     assert connection.commits == 0

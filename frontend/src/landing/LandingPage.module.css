@@ -25,7 +25,7 @@
   min-height: max(760px, 100svh);
   overflow: clip;
   background: var(--landing-ice);
-  color: var(--landing-aubergine);
+  color: var(--color-landing-text);
   font-family: var(--landing-font-ui);
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
@@ -41,7 +41,7 @@
 .world, .staticPlate { position: absolute; inset: 0; pointer-events: none; }
 .world { position: fixed; z-index: 0; height: 100svh; }
 .staticPlate svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.plateRing { fill: var(--landing-marigold); }
+.plateRing { fill: var(--color-scene-accent); }
 .plateWire { stroke: var(--landing-aubergine); stroke-width: 0.8; stroke-opacity: 0.46; }
 .plateParticle { fill: var(--landing-aubergine); }
 
@@ -66,14 +66,26 @@
 .headerLink svg { width: 16px; height: 16px; }
 .headerLink:hover { text-decoration: underline; text-underline-offset: 5px; }
 
+.authControls { pointer-events: auto; min-width: 0; }
+.authControls :global(.auth-controls) { flex-wrap: wrap; justify-content: flex-end; }
+.authControls :global(button) { color: inherit; background: transparent; border: 1px solid currentColor; min-height: 44px; white-space: nowrap; }
+.authControls :global(.auth-user), .authControls :global(.auth-status) { color: inherit; }
+.authControls :global(.auth-user) { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 759px) {
+  .header:has(.authControls) { gap: 12px; flex-wrap: wrap; padding-block: 12px; }
+  .header:has(.authControls) .headerLink { gap: 8px; }
+  .authControls { margin-left: auto; }
+  .authControls :global(.auth-user) { max-width: 120px; }
+}
+
 .main { position: relative; display: flex; align-items: center; flex: 1; padding: 76px var(--landing-gutter) 100px; min-height: 590px; outline: none; }
 .copy { position: relative; z-index: 1; width: 100%; max-width: 1600px; margin-inline: auto; }
-.headline { margin: 0; min-width: 0; max-width: 13ch; font-family: var(--landing-font-display); font-weight: 500; font-size: clamp(76px, 8.7vw, 144px); line-height: 0.95; letter-spacing: -0.05em; overflow-wrap: break-word; }
+.headline { color: var(--landing-aubergine); margin: 0; min-width: 0; max-width: 13ch; font-family: var(--landing-font-display); font-weight: 500; font-size: clamp(76px, 8.7vw, 144px); line-height: 0.95; letter-spacing: -0.05em; overflow-wrap: break-word; }
 .headline span { white-space: nowrap; }
 .introduction { margin-top: 36px; max-width: 400px; }
 .introduction p { margin: 0 0 24px; font-size: 17px; line-height: 1.5; letter-spacing: -0.025em; }
-.primaryLink { display: inline-flex; justify-content: space-between; align-items: center; gap: 32px; min-height: 58px; padding: 16px 24px; background: var(--landing-marigold); border: 1px solid var(--landing-aubergine); font-size: 14px; font-weight: 500; line-height: 1.2; letter-spacing: -0.015em; }
-.primaryLink:hover { background: var(--landing-aubergine); color: var(--landing-paper); }
+.page .primaryLink { color: var(--color-on-accent); display: inline-flex; justify-content: space-between; align-items: center; gap: 32px; min-height: 58px; padding: 16px 24px; background: var(--landing-marigold); border: 1px solid var(--landing-aubergine); font-size: 14px; font-weight: 500; line-height: 1.2; letter-spacing: -0.015em; }
+.primaryLink:hover { background: var(--color-action-bg); color: var(--color-inverse-text); }
 .primaryLink:active { background: var(--landing-paper); color: var(--landing-aubergine); }
 .previewNote { display: block; margin-top: 12px; font-size: 12px; line-height: 1.4; letter-spacing: -0.01em; }
 
@@ -159,3 +171,7 @@
 .header:focus-within { transform: translateY(0) !important; }
 
 .page[data-journey="static"] .header { position: absolute; }
+
+/* Keep existing header content and the theme control reachable on narrow screens. */
+.header button { pointer-events: auto; }
+@media (max-width: 759px) { .header { gap: 12px; flex-wrap: wrap; align-content: center; } .headerLink { margin-left: auto; } .header .authControls { margin-left: auto; } }

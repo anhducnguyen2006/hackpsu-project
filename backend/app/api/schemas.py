@@ -109,6 +109,7 @@ class UCIRecord(BaseModel):
     subject_area: str | None = None
     variables: list[str] = []
     variable_descriptions: dict[str, str] = {}
+    variable_types: dict[str, str] = {}
     instance_count: int | None = None
     feature_count: int | None = None
     data_available: bool | None = None
@@ -121,6 +122,15 @@ class DownloadResource(BaseModel):
 
     url: HttpUrl
     format: str
+    file_id: str | None = None
+    filename: str | None = None
+    original_filename: str | None = None
+    content_type: str | None = None
+    original_format: str | None = None
+    size_bytes: int | None = None
+    checksum: str | None = None
+    access_status: str | None = None
+    eligible: bool = False
 
     @field_validator("url", mode="before")
     @classmethod
@@ -183,7 +193,23 @@ class DatasetRecord(BaseModel):
     temporal_coverage: list[str] = Field(default_factory=list)
     doi: str | None = None
     license: str | None = None
+    authors: list[str] = Field(default_factory=list)
+    publisher: str | None = None
+    publication_date: str | None = None
+    keywords: list[str] = Field(default_factory=list)
     data_available: bool | None = None
+    eligibility_status: Literal[
+        "supported_resource_verified",
+        "download_verified",
+        "unsupported",
+        "restricted",
+        "verification_failed",
+        "unverified",
+    ] = "unverified"
+    eligibility_reason: str | None = None
+    download_performed: bool = False
+    source_version: str | None = None
+    verification_candidates: list[DownloadResource] = Field(default_factory=list)
 
     @field_validator("id")
     @classmethod
@@ -217,7 +243,13 @@ class DatasetRecord(BaseModel):
         return normalized
 
     @field_validator(
-        "description", "doi", "license", "landing_page_url", mode="before"
+        "description",
+        "doi",
+        "license",
+        "landing_page_url",
+        "publisher",
+        "publication_date",
+        mode="before",
     )
     @classmethod
     def normalize_optional_metadata(cls, value: object) -> object:
@@ -227,7 +259,12 @@ class DatasetRecord(BaseModel):
         return value
 
     @field_validator(
-        "subjects", "geographic_coverage", "temporal_coverage", mode="before"
+        "subjects",
+        "geographic_coverage",
+        "temporal_coverage",
+        "authors",
+        "keywords",
+        mode="before",
     )
     @classmethod
     def normalize_text_lists(cls, value: object) -> object:
@@ -297,6 +334,22 @@ class DatasetResult(UCIRecord):
     temporal_coverage: list[str] = Field(default_factory=list)
     doi: str | None = None
     license: str | None = None
+    authors: list[str] = Field(default_factory=list)
+    publisher: str | None = None
+    publication_date: str | None = None
+    keywords: list[str] = Field(default_factory=list)
+    eligibility_status: Literal[
+        "supported_resource_verified",
+        "download_verified",
+        "unsupported",
+        "restricted",
+        "verification_failed",
+        "unverified",
+    ] = "unverified"
+    eligibility_reason: str | None = None
+    download_performed: bool = False
+    source_version: str | None = None
+    verification_candidates: list[DownloadResource] = Field(default_factory=list)
     data_status: Literal["metadata_only", "available", "failed", "analyzed"]
     preliminary_relevance_score: int | None = Field(default=None, ge=0, le=100)
     semantic_similarity_score: float | None = Field(default=None, ge=-1, le=1)
@@ -320,6 +373,7 @@ class DiscoveryResponse(BaseModel):
     ranking_status: Literal[
         "semantic_embeddings", "keyword_fallback", "unavailable", "demo_cached"
     ] = "unavailable"
+    research_query_id: int | None = None
 
 
 class DiscoveryGraphRequest(BaseModel):
@@ -344,6 +398,47 @@ class AnalysisRequest(BaseModel):
     research_question: str = Field(min_length=10, max_length=2000)
 
 
+class DatasetResourceRequest(BaseModel):
+    """Identifies a discovered dataset without putting slashes in the URL path."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    dataset_id: str = Field(min_length=3, max_length=300)
+
+
+class DatasetAnalysisCommand(BaseModel):
+    """Analysis request for UCI and external datasets.
+
+    ``resource_id`` is a provider file id or filename resolved by the server.
+    Clients cannot submit a download URL.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    dataset_id: str = Field(min_length=3, max_length=300)
+    research_question: str = Field(min_length=10, max_length=2000)
+    resource_id: str | None = Field(default=None, min_length=1, max_length=300)
+    research_query_id: int | None = Field(default=None, ge=1)
+
+
+class DatasetResourcesResponse(BaseModel):
+    dataset_id: str
+    provider: str
+    source_version: str | None = None
+    doi: str | None = None
+    eligibility_status: Literal[
+        "supported_resource_verified",
+        "download_verified",
+        "unsupported",
+        "restricted",
+        "verification_failed",
+        "unverified",
+    ] = "unverified"
+    resources: list[DownloadResource] = Field(default_factory=list)
+    verification_candidates: list[DownloadResource] = Field(default_factory=list)
+    note: str | None = None
+
+
 class NumericSummary(BaseModel):
     count: int
     mean: float | None = None
@@ -362,10 +457,13 @@ class CategoryCount(BaseModel):
 
 class ColumnProfile(BaseModel):
     name: str
+    variable_description: str | None = None
     data_type: str
     measurement_type: Literal[
-        "numeric",
-        "ordinal_or_encoded_numeric",
+        "continuous",
+        "discrete_numeric",
+        "binary",
+        "ordinal",
         "categorical",
         "identifier_like",
     ]
@@ -445,12 +543,27 @@ class DatasetAnalysisResponse(BaseModel):
     assessment: ResearchAssessment | None = None
     ai_assessment_status: Literal["available", "unavailable"] = "unavailable"
     warnings: list[str] = []
+    analyzed_resource: DownloadResource | None = None
+    eligibility_status: Literal[
+        "supported_resource_verified",
+        "download_verified",
+        "unsupported",
+        "restricted",
+        "verification_failed",
+        "unverified",
+    ] | None = None
+    download_performed: bool = False
+    research_query_id: int | None = None
+    history_saved: bool = False
+    source_doi: str | None = None
+    source_version: str | None = None
 
 
 class ExploreRequest(BaseModel):
     research_question: str = Field(min_length=10, max_length=2000)
     independent_variable: str = Field(min_length=1, max_length=200)
     outcome_variable: str = Field(min_length=1, max_length=200)
+    resource_id: str | None = Field(default=None, min_length=1, max_length=300)
 
 
 class ExploratoryCategory(BaseModel):
@@ -465,8 +578,12 @@ class ExploratoryAnalysisResponse(BaseModel):
     dataset_id: str
     independent_variable: str
     outcome_variable: str
-    independent_measurement_type: Literal["ordinal_or_encoded_numeric", "categorical"]
-    outcome_measurement_type: Literal["numeric"]
+    independent_measurement_type: Literal[
+        "continuous", "discrete_numeric", "binary", "ordinal", "categorical"
+    ]
+    outcome_measurement_type: Literal[
+        "continuous", "discrete_numeric", "binary", "ordinal", "categorical"
+    ]
     categories: list[ExploratoryCategory]
     missing_independent_count: int
     missing_outcome_count: int

@@ -1,3 +1,4 @@
+import { observeThemeColors, themeColor } from "../theme/theme";
 import { useCallback, useEffect, useRef, useState } from "react";
 import cytoscape from "cytoscape";
 import type { ResearchGraphEdgeData, ResearchGraphNodeData, ResearchGraphResponse } from "../types";
@@ -17,6 +18,17 @@ function scoreLabel(score: number | null) {
 
 function shortenQuestion(question: string, length = 42) {
   return question.length > length ? `${question.slice(0, length - 1).trimEnd()}…` : question;
+}
+
+function connectionStyles(): cytoscape.StylesheetJson {
+  return [
+        { selector: "node", style: { label: "data(display_label)", color: themeColor("--color-heading"), "font-family": "Georgia, serif", "font-size": 12, "text-wrap": "wrap", "text-max-width": "88px", "text-overflow-wrap": "anywhere", "text-valign": "center", "text-halign": "center", width: 116, height: 76, shape: "round-rectangle", "background-color": themeColor("--color-surface"), "border-width": 2, "border-color": themeColor("--color-heading"), "overlay-opacity": 0 } },
+        { selector: "edge", style: { width: 2, "line-color": themeColor("--color-connection-edge"), "curve-style": "bezier", "target-arrow-shape": "none", opacity: 0.82 } },
+        { selector: 'edge[relationship_type = "SEMANTIC_SIMILARITY"]', style: { "line-style": "dashed", "line-color": themeColor("--color-connection-edge") } },
+        { selector: 'edge[relationship_type = "SHARED_DATASET"]', style: { "line-color": themeColor("--color-accent"), width: 3 } },
+        { selector: ".is-selected", style: { "border-color": themeColor("--color-accent"), "border-width": 4, opacity: 1 } },
+        { selector: "edge.is-selected", style: { width: 5, opacity: 1 } },
+      ];
 }
 
 export function ResearchConnectionsGraph({ apiBase, onSelectQuery }: ResearchConnectionsGraphProps) {
@@ -77,14 +89,7 @@ export function ResearchConnectionsGraph({ apiBase, onSelectQuery }: ResearchCon
       container: containerRef.current,
       elements: [...graph.nodes.map(({ data }) => ({ data: { ...data, display_label: `${data.research_id}\n${shortenQuestion(data.question, 28)}` } })), ...graph.edges.map(({ data }) => ({ data }))],
       layout: { name: "cose", animate: false, padding: 44, fit: true },
-      style: [
-        { selector: "node", style: { label: "data(display_label)", color: "#3A0F34", "font-family": "Georgia, serif", "font-size": 12, "text-wrap": "wrap", "text-max-width": "88px", "text-overflow-wrap": "anywhere", "text-valign": "center", "text-halign": "center", width: 116, height: 76, shape: "round-rectangle", "background-color": "#F6F7F6", "border-width": 2, "border-color": "#3A0F34", "overlay-opacity": 0 } },
-        { selector: "edge", style: { width: 2, "line-color": "#8D7888", "curve-style": "bezier", "target-arrow-shape": "none", opacity: 0.82 } },
-        { selector: 'edge[relationship_type = "SEMANTIC_SIMILARITY"]', style: { "line-style": "dashed", "line-color": "#8D7888" } },
-        { selector: 'edge[relationship_type = "SHARED_DATASET"]', style: { "line-color": "#EAAA00", width: 3 } },
-        { selector: ".is-selected", style: { "border-color": "#EAAA00", "border-width": 4, opacity: 1 } },
-        { selector: "edge.is-selected", style: { width: 5, opacity: 1 } },
-      ],
+      style: connectionStyles(),
     });
     cy.on("tap", "node", (event) => {
       const node = event.target.data() as ResearchGraphNodeData;
@@ -107,8 +112,11 @@ export function ResearchConnectionsGraph({ apiBase, onSelectQuery }: ResearchCon
         cy.elements().removeClass("is-selected");
       }
     });
+    const stopColors = observeThemeColors(() => {
+      cy.style(connectionStyles()).update();
+    });
     cyRef.current = cy;
-    return () => { cy.destroy(); cyRef.current = null; };
+    return () => { stopColors(); cy.destroy(); cyRef.current = null; };
   }, [error, graph, loading, onSelectQuery]);
 
   useEffect(() => {

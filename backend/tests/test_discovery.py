@@ -65,7 +65,7 @@ def test_discovery_returns_only_repository_candidates() -> None:
     assert datasets[0].score_type == "semantic_similarity"
     assert "not a probability" in datasets[0].relevance_explanation
     assert warnings == []
-    assert mode == "gemini"
+    assert mode == "keyword_fallback"
 
 
 def test_normal_search_does_not_call_gemini_reranking() -> None:
@@ -79,7 +79,7 @@ def test_normal_search_does_not_call_gemini_reranking() -> None:
 
     assert datasets
     assert warnings == []
-    assert mode == "gemini"
+    assert mode == "keyword_fallback"
 
 
 def test_gemini_failure_uses_labeled_fallback() -> None:
@@ -94,8 +94,7 @@ def test_gemini_failure_uses_labeled_fallback() -> None:
     assert datasets
     assert interpretation is not None
     assert interpretation.refined_question is None
-    assert warnings
-    assert "Gemini unavailable" in warnings[0]
+    assert warnings == []
     assert mode == "keyword_fallback"
 
 
@@ -106,7 +105,36 @@ def test_fallback_interpretation_preserves_affect_and_geography_structure() -> N
 
     assert interpretation.independent_variables == ["rainfall"]
     assert interpretation.dependent_variables == ["crop production"]
-    assert interpretation.target_population == "Nepal"
+    assert interpretation.geographic_scope == "Nepal"
+    assert interpretation.target_population is None
+
+
+def test_fallback_interpretation_keeps_multiword_concepts() -> None:
+    caffeine = DiscoveryService._fallback_interpretation("caffeine and sleep quality")
+    assert caffeine.independent_variables == ["caffeine"]
+    assert caffeine.dependent_variables == ["sleep quality"]
+    assert caffeine.target_population is None
+    assert caffeine.geographic_scope is None
+    assert caffeine.temporal_scope is None
+    assert "caffeine intake" in caffeine.synonyms or "caffeine consumption" in caffeine.synonyms
+
+    college = DiscoveryService._fallback_interpretation(
+        "Does caffeine consumption affect sleep quality among US college students in 2025?"
+    )
+    assert college.independent_variables == ["caffeine consumption"]
+    assert college.dependent_variables == ["sleep quality"]
+    assert college.target_population == "college students"
+    assert college.geographic_scope == "United States"
+    assert college.temporal_scope == "2025"
+
+    rainfall = DiscoveryService._fallback_interpretation(
+        "How does rainfall relate to crop yield?"
+    )
+    assert rainfall.independent_variables == ["rainfall"]
+    assert rainfall.dependent_variables == ["crop yield"]
+    assert rainfall.geographic_scope is None
+    assert rainfall.temporal_scope is None
+    assert rainfall.target_population is None
 
 
 def test_search_concepts_keep_original_and_refined_questions() -> None:
@@ -136,8 +164,8 @@ def test_repository_failure_returns_empty_results() -> None:
     ).search("Does study time affect grades?", 8)
 
     assert datasets == []
-    assert "UCI repository unavailable" in warnings[0]
-    assert mode == "partial_gemini"
+    assert any("UCI repository unavailable" in warning for warning in warnings)
+    assert mode == "keyword_fallback"
 
 
 def test_discovery_cache_avoids_repeating_repository_work() -> None:
