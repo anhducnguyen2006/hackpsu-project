@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -5,12 +6,19 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import datasets, discovery, health, research
 from app.config import settings
-from database.connection import close_database, open_database
+from database.connection import DatabaseUnavailableError, close_database, open_database
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    open_database()
+    try:
+        open_database()
+    except DatabaseUnavailableError:
+        # Health and non-persistent routes stay available. Database routes
+        # report 503 until a configured TigerData pool can be opened.
+        logger.warning("TigerData persistence is unavailable; database-backed routes will return 503.")
     try:
         yield
     finally:

@@ -11,6 +11,8 @@ import { DatasetGraph } from "./components/DatasetGraph";
 import { AnalysisView } from "./components/AnalysisView";
 import { EXAMPLE_EXPLORATION } from "./demo/researchExample";
 import { PastResearch } from "./components/PastResearch";
+import type { AuthorizedFetch } from "./auth/api";
+import { protectedRequestError } from "./auth/api";
 import type { DatasetAnalysisResponse, DatasetGraphResponse, DiscoveryResponse, ExploratoryAnalysisResponse } from "./types";
 
 export type PreviewStage = "question" | "interpretation" | "datasets" | "graph" | "analysis" | "history";
@@ -27,7 +29,7 @@ function getApiBase(): string | undefined {
   return import.meta.env.MODE === "test" ? undefined : "http://localhost:8000";
 }
 
-function App({ authControls }: { authControls?: ReactNode }) {
+function App({ authControls, authorizedFetch }: { authControls?: ReactNode; authorizedFetch?: AuthorizedFetch }) {
   const [stage, setStage] = useState<PreviewStage>("question");
   const [discovery, setDiscovery] = useState<DiscoveryResponse | null>(null);
   const [activeQuestion, setActiveQuestion] = useState(EXAMPLE_QUESTION);
@@ -50,6 +52,7 @@ function App({ authControls }: { authControls?: ReactNode }) {
   }
   async function search(question: string) {
     if (!apiBase) throw new Error("Live search is not configured for this frontend.");
+    if (!authorizedFetch) throw new Error("Log in to search live repositories.");
     searchController.current?.abort();
     const controller = new AbortController();
     searchController.current = controller;
@@ -64,14 +67,14 @@ function App({ authControls }: { authControls?: ReactNode }) {
     setGraphError("");
     setGraphLoading(true);
     try {
-      const response = await fetch(`${apiBase}/api/v1/discovery/search`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ research_question: question, limit: 12 }), signal: controller.signal });
-      if (!response.ok) throw new Error("The discovery service could not complete this search. Check that the backend is running and try again.");
+      const response = await authorizedFetch(`${apiBase}/api/v1/discovery/search`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ research_question: question, limit: 12 }), signal: controller.signal });
+      if (!response.ok) throw new Error(protectedRequestError(response.status, "The discovery service could not complete this search. Check that the backend is running and try again."));
       const payload = await response.json() as DiscoveryResponse;
       if (sequence !== requestSequence.current) return;
       setDiscovery(payload);
       try {
-        const graphResponse = await fetch(`${apiBase}/api/v1/discovery/graph`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ research_question: question, limit: 12 }), signal: controller.signal });
-        if (!graphResponse.ok) throw new Error("The dataset graph could not be loaded for this search.");
+        const graphResponse = await authorizedFetch(`${apiBase}/api/v1/discovery/graph`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ research_question: question, limit: 12 }), signal: controller.signal });
+        if (!graphResponse.ok) throw new Error(protectedRequestError(graphResponse.status, "The dataset graph could not be loaded for this search."));
         if (sequence === requestSequence.current) setGraph(await graphResponse.json() as DatasetGraphResponse);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
@@ -85,20 +88,19 @@ function App({ authControls }: { authControls?: ReactNode }) {
       throw error;
     }
   }
-  async function openAnalysis(datasetId: string) {
+  async function openAnalysis(datasetId: string, resourceId?: string) {
     if (analysisMode === "preview") { setStage("analysis"); return; }
-    if (!datasetId.startsWith("uci:")) return;
-    if (!apiBase) return;
+    if (!apiBase || !authorizedFetch) return;
     setAnalysisLoading(true);
     setAnalysisError("");
     try {
-      const response = await fetch(`${apiBase}/api/v1/datasets/${encodeURIComponent(datasetId)}/analyze`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ research_question: activeQuestion }) });
-      if (!response.ok) throw new Error("UCI analysis is unavailable for this dataset right now.");
+      const response = await authorizedFetch(`${apiBase}/api/v1/datasets/analyze`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ dataset_id: datasetId, research_question: activeQuestion, ...(resourceId ? { resource_id: resourceId } : {}) }) });
+      if (!response.ok) throw new Error(protectedRequestError(response.status, "Analysis is unavailable for this dataset right now."));
       setAnalysis(await response.json() as DatasetAnalysisResponse);
       setExploration(undefined);
       setStage("analysis");
     } catch (error) {
-      setAnalysisError(error instanceof Error ? error.message : "UCI analysis failed. Please try again.");
+      setAnalysisError(error instanceof Error ? error.message : "Analysis failed. Please try again.");
     } finally {
       setAnalysisLoading(false);
     }
@@ -112,7 +114,7 @@ function App({ authControls }: { authControls?: ReactNode }) {
         {stages.map(({ key, label }, index) => <button type="button" key={key} aria-current={stage === key ? "page" : undefined} onClick={() => setStage(key)}><span className="nav-index" aria-hidden="true">0{index + 1}</span>{label}</button>)}
       </nav>
     </header>
-    <main id="main-content" className="stage-main">{stage !== "question" && stage !== "history" && <div className="example-context"><span className="data-label">{analysisMode === "live" ? "Research question" : "Cached example question"}</span><span>{analysisMode === "live" ? activeQuestion : EXAMPLE_QUESTION}</span><button type="button" onClick={() => setStage("question")}>Revise question</button></div>}{stage === "question" ? <ResearchQuestion exampleQuestion={EXAMPLE_QUESTION} apiBase={apiBase} onOpenResearch={openResearch} onExploreExample={() => { requestSequence.current += 1; setDiscovery(null); setActiveQuestion(EXAMPLE_QUESTION); setAnalysisMode("preview"); setAnalysis(EXAMPLE_ANALYSIS); setExploration(EXAMPLE_EXPLORATION); setAnalysisError(""); setGraph(null); setGraphError(""); setGraphLoading(false); setStage("interpretation"); }} onSearch={liveSearchEnabled ? search : undefined} /> : stage === "history" ? <PastResearch apiBase={apiBase} selectedQueryId={selectedQueryId} onSelectQuery={setSelectedQueryId} /> : stage === "interpretation" ? <InterpretationSheet interpretation={liveInterpretation} processingMode={analysisMode === "live" ? discovery?.processing_mode : "keyword_fallback"} onSearchQuestion={liveSearchEnabled ? search : undefined} /> : stage === "datasets" ? <DatasetLedger datasets={liveDatasets} discovery={analysisMode === "live" ? discovery : null} analysisMode={analysisMode} analysisLoading={analysisLoading} analysisError={analysisError} onOpenAnalysis={openAnalysis} graph={graph} graphLoading={graphLoading} graphError={graphError} /> : stage === "graph" ? <DatasetGraph graph={graph} datasets={liveDatasets} loading={graphLoading} error={graphError} /> : analysisMode === "live" && !analysis ? <section className="analysis-page" aria-labelledby="analysis-title"><p className="eyebrow">Research instrument / 05 — Analysis</p><h1 id="analysis-title">Analysis</h1><div className="empty-state" role="status"><h2>No dataset analyzed</h2><p>Select an eligible UCI dataset from the discovery ledger to load a computed profile.</p></div></section> : <AnalysisView analysis={analysis ?? EXAMPLE_ANALYSIS} exploration={analysisMode === "live" ? exploration : EXAMPLE_EXPLORATION} />}</main>
+    <main id="main-content" className="stage-main">{stage !== "question" && stage !== "history" && <div className="example-context"><span className="data-label">{analysisMode === "live" ? "Research question" : "Cached example question"}</span><span>{analysisMode === "live" ? activeQuestion : EXAMPLE_QUESTION}</span><button type="button" onClick={() => setStage("question")}>Revise question</button></div>}{stage === "question" ? <ResearchQuestion exampleQuestion={EXAMPLE_QUESTION} apiBase={apiBase} authorizedFetch={authorizedFetch} onOpenResearch={openResearch} onExploreExample={() => { requestSequence.current += 1; setDiscovery(null); setActiveQuestion(EXAMPLE_QUESTION); setAnalysisMode("preview"); setAnalysis(EXAMPLE_ANALYSIS); setExploration(EXAMPLE_EXPLORATION); setAnalysisError(""); setGraph(null); setGraphError(""); setGraphLoading(false); setStage("interpretation"); }} onSearch={liveSearchEnabled ? search : undefined} /> : stage === "history" ? <PastResearch apiBase={apiBase} authorizedFetch={authorizedFetch} selectedQueryId={selectedQueryId} onSelectQuery={setSelectedQueryId} /> : stage === "interpretation" ? <InterpretationSheet interpretation={liveInterpretation} processingMode={analysisMode === "live" ? discovery?.processing_mode : "keyword_fallback"} onSearchQuestion={liveSearchEnabled ? search : undefined} /> : stage === "datasets" ? <DatasetLedger datasets={liveDatasets} discovery={analysisMode === "live" ? discovery : null} analysisMode={analysisMode} analysisLoading={analysisLoading} analysisError={analysisError} onOpenAnalysis={openAnalysis} graph={graph} graphLoading={graphLoading} graphError={graphError} /> : stage === "graph" ? <DatasetGraph graph={graph} datasets={liveDatasets} loading={graphLoading} error={graphError} /> : analysisMode === "live" && !analysis ? <section className="analysis-page" aria-labelledby="analysis-title"><p className="eyebrow">Research instrument / 05 — Analysis</p><h1 id="analysis-title">Analysis</h1><div className="empty-state" role="status"><h2>No dataset analyzed</h2><p>Select one supported data file from the discovery ledger. The server retrieves that file and computes the profile.</p></div></section> : <AnalysisView analysis={analysis ?? EXAMPLE_ANALYSIS} exploration={analysisMode === "live" ? exploration : EXAMPLE_EXPLORATION} presentation={analysisMode === "live" ? "computed" : "preview"} />}</main>
     <footer className="site-footer">DataOPedia / Research instrument · {analysisMode === "live" ? "Live repository metadata" : "Cached UCI example"}</footer>
   </div>;
 }

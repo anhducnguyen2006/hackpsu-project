@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import AppEntry from "./AppEntry";
 
@@ -19,10 +19,14 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-it("preserves the research preview and its five stages at the root", () => {
+it("preserves the research preview and its six stages at the root", () => {
   render(<AppEntry />);
   expect(screen.getByText("Static preview · cached UCI example")).toBeVisible();
-  expect(screen.getByRole("navigation", { name: "Preview stages" }).children).toHaveLength(5);
+  const navigation = screen.getByRole("navigation", { name: "Research navigation" });
+  expect(navigation.children).toHaveLength(6);
+  for (const name of ["Question", "Interpretation", "Datasets", "Graph", "Analysis", "Past Research"]) {
+    expect(within(navigation).getByRole("button", { name })).toBeVisible();
+  }
   expect(screen.queryByTestId("research-world")).not.toBeInTheDocument();
 });
 
@@ -35,7 +39,7 @@ it.each(["/landing", "/landing/", "/landing?source=preview"])(
     expect(await screen.findByRole("heading", { level: 1, name: "Every question opens a world." })).toBeVisible();
     expect(screen.getByRole("link", { name: "Open research preview" })).toHaveAttribute("href", "/");
     expect(screen.queryByRole("contentinfo")).not.toBeInTheDocument();
-    expect(screen.queryByRole("navigation", { name: "Preview stages" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Research navigation" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("research-world")).not.toBeInTheDocument();
     expect(request).not.toHaveBeenCalled();
   },

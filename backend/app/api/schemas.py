@@ -80,6 +80,15 @@ class DownloadResource(BaseModel):
 
     url: HttpUrl
     format: str
+    file_id: str | None = None
+    filename: str | None = None
+    original_filename: str | None = None
+    content_type: str | None = None
+    original_format: str | None = None
+    size_bytes: int | None = None
+    checksum: str | None = None
+    access_status: str | None = None
+    eligible: bool = False
 
     @field_validator("url", mode="before")
     @classmethod
@@ -143,6 +152,18 @@ class DatasetRecord(BaseModel):
     doi: str | None = None
     license: str | None = None
     data_available: bool | None = None
+    eligibility_status: Literal[
+        "supported_resource_verified",
+        "download_verified",
+        "unsupported",
+        "restricted",
+        "verification_failed",
+        "unverified",
+    ] = "unverified"
+    eligibility_reason: str | None = None
+    download_performed: bool = False
+    source_version: str | None = None
+    verification_candidates: list[DownloadResource] = Field(default_factory=list)
 
     @field_validator("id")
     @classmethod
@@ -256,6 +277,17 @@ class DatasetResult(UCIRecord):
     temporal_coverage: list[str] = Field(default_factory=list)
     doi: str | None = None
     license: str | None = None
+    eligibility_status: Literal[
+        "supported_resource_verified",
+        "download_verified",
+        "unsupported",
+        "restricted",
+        "verification_failed",
+        "unverified",
+    ] = "unverified"
+    eligibility_reason: str | None = None
+    download_performed: bool = False
+    source_version: str | None = None
     data_status: Literal["metadata_only", "available", "failed", "analyzed"]
     preliminary_relevance_score: int | None = Field(default=None, ge=0, le=100)
     semantic_similarity_score: float | None = Field(default=None, ge=-1, le=1)
@@ -301,6 +333,46 @@ class KnowledgeGraphResponse(BaseModel):
 
 class AnalysisRequest(BaseModel):
     research_question: str = Field(min_length=10, max_length=2000)
+
+
+class DatasetResourceRequest(BaseModel):
+    """Identifies a discovered dataset without putting slashes in the URL path."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    dataset_id: str = Field(min_length=3, max_length=300)
+
+
+class DatasetAnalysisCommand(BaseModel):
+    """Analysis request for UCI and external datasets.
+
+    ``resource_id`` is a provider file id or filename resolved by the server.
+    Clients cannot submit a download URL.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    dataset_id: str = Field(min_length=3, max_length=300)
+    research_question: str = Field(min_length=10, max_length=2000)
+    resource_id: str | None = Field(default=None, min_length=1, max_length=300)
+
+
+class DatasetResourcesResponse(BaseModel):
+    dataset_id: str
+    provider: str
+    source_version: str | None = None
+    doi: str | None = None
+    eligibility_status: Literal[
+        "supported_resource_verified",
+        "download_verified",
+        "unsupported",
+        "restricted",
+        "verification_failed",
+        "unverified",
+    ] = "unverified"
+    resources: list[DownloadResource] = Field(default_factory=list)
+    verification_candidates: list[DownloadResource] = Field(default_factory=list)
+    note: str | None = None
 
 
 class NumericSummary(BaseModel):
@@ -404,12 +476,23 @@ class DatasetAnalysisResponse(BaseModel):
     assessment: ResearchAssessment | None = None
     ai_assessment_status: Literal["available", "unavailable"] = "unavailable"
     warnings: list[str] = []
+    analyzed_resource: DownloadResource | None = None
+    eligibility_status: Literal[
+        "supported_resource_verified",
+        "download_verified",
+        "unsupported",
+        "restricted",
+        "verification_failed",
+        "unverified",
+    ] | None = None
+    download_performed: bool = False
 
 
 class ExploreRequest(BaseModel):
     research_question: str = Field(min_length=10, max_length=2000)
     independent_variable: str = Field(min_length=1, max_length=200)
     outcome_variable: str = Field(min_length=1, max_length=200)
+    resource_id: str | None = Field(default=None, min_length=1, max_length=300)
 
 
 class ExploratoryCategory(BaseModel):

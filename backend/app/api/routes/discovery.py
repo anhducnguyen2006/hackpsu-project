@@ -1,10 +1,12 @@
 import logging
 import time
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends
 
 from app.api import schemas
 from app.api.schemas import DiscoveryGraphRequest, DiscoveryRequest, DiscoveryResponse, KnowledgeGraphResponse
+from app.auth import AuthenticatedPrincipal, require_principal
+from app.limits import discovery_gate
 from app.assessment.gemini import GeminiService
 from app.config import settings
 from app.demo import demo_search
@@ -13,7 +15,11 @@ from app.discovery.search import DiscoveryService, build_external_providers
 from app.discovery.uci import UCIRepositoryService
 from app.research.repository import persist_discovery_result
 
-router = APIRouter(prefix="/discovery", tags=["discovery"])
+router = APIRouter(
+    prefix="/discovery",
+    tags=["discovery"],
+    dependencies=[Depends(require_principal)],
+)
 logger = logging.getLogger(__name__)
 repository = UCIRepositoryService(catalog_ttl=settings.uci_catalog_ttl_seconds)
 service = DiscoveryService(
@@ -29,9 +35,20 @@ def _persist_discovery_result_background(
     normalized_question: str | None,
     dataset_payloads: list[dict],
     embedding_service: object | None,
+    user_sub: str,
 ) -> None:
-    """Best-effort persistence with a fresh repository transaction."""
+    """Best-effort persistence with a fresh repository transaction.
+
+    ``user_sub`` is the verified subject captured on the request. The task does
+    not read the request or a request-scoped connection. Anonymous history is
+    never written.
+    """
     started = time.perf_counter()
+    if not isinstance(user_sub, str) or not user_sub.strip():
+        logger.error(
+            "discovery background persistence refused because no authenticated owner was supplied"
+        )
+        return
     try:
         datasets = [
             schemas.DatasetResult.model_validate(payload)
@@ -42,6 +59,7 @@ def _persist_discovery_result_background(
             normalized_question=normalized_question,
             datasets=datasets,
             embedding_service=embedding_service,
+            user_sub=user_sub.strip(),
         )
         logger.info(
             "discovery stage=background_persistence elapsed_ms=%.1f query_id=%s datasets=%d",
@@ -62,9 +80,21 @@ def _persist_discovery_result_background(
 
 @router.post("/search", response_model=DiscoveryResponse)
 def search(
-    request: DiscoveryRequest, background_tasks: BackgroundTasks
+    request: DiscoveryRequest,
+    background_tasks: BackgroundTasks,
+    principal: AuthenticatedPrincipal = Depends(require_principal),
 ) -> DiscoveryResponse:
     started = time.perf_counter()
+    with discovery_gate.limit(principal.sub):
+        return _search(request, background_tasks, principal, started)
+
+
+def _search(
+    request: DiscoveryRequest,
+    background_tasks: BackgroundTasks,
+    principal: AuthenticatedPrincipal,
+    started: float,
+) -> DiscoveryResponse:
     if settings.demo_mode:
         interpretation, datasets, warnings, processing_mode = demo_search(
             request.research_question
@@ -92,13 +122,14 @@ def search(
         interpretation.refined_question if interpretation else None,
         [dataset.model_dump(mode="json") for dataset in datasets],
         getattr(service, "embedding_service", None),
+        principal.sub,
     )
     explanation = (
         "Results are ranked using verified repository metadata and local semantic "
         "similarity. Semantic similarity is not research suitability; full suitability "
         "requires data profiling."
         if datasets
-        else "No UCI datasets matched the verified metadata search terms."
+        else "No eligible public tabular datasets were both verified and relevant enough to return."
     )
     response = DiscoveryResponse(
         interpretation=interpretation,
@@ -118,8 +149,12 @@ def search(
 
 
 @router.post("/graph", response_model=KnowledgeGraphResponse)
-def graph(request: DiscoveryGraphRequest) -> KnowledgeGraphResponse:
+def graph(
+    request: DiscoveryGraphRequest,
+    principal: AuthenticatedPrincipal = Depends(require_principal),
+) -> KnowledgeGraphResponse:
     """Build a graph from this process's cached normalized search records."""
-    if settings.demo_mode:
-        return KnowledgeGraphResponse(nodes=[], edges=[])
-    return service.graph_for_search(request.research_question, request.limit)
+    with discovery_gate.limit(principal.sub):
+        if settings.demo_mode:
+            return KnowledgeGraphResponse(nodes=[], edges=[])
+        return service.graph_for_search(request.research_question, request.limit)

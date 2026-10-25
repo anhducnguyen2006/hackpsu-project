@@ -28,6 +28,25 @@ it("shows documented UCI metadata and gates the analyzed example", async () => {
   expect(screen.getByRole("button", { name: "Analysis preview unavailable" })).toBeDisabled();
 });
 
+it("requires an explicit file choice when several supported resources are present", async () => {
+  const onOpenAnalysis = vi.fn();
+  const dataset = {
+    ...EXAMPLE_DATASETS[0],
+    dataset_id: "zenodo:42",
+    title: "Rainfall table",
+    source: "Zenodo",
+    download_resources: [
+      { url: "https://zenodo.org/api/records/42/files/a.csv/content", format: "csv", file_id: "a.csv", filename: "a.csv", eligible: true },
+      { url: "https://zenodo.org/api/records/42/files/b.csv/content", format: "csv", file_id: "b.csv", filename: "b.csv", eligible: true },
+    ],
+  };
+  render(<DatasetLedger datasets={[dataset]} analysisMode="live" onOpenAnalysis={onOpenAnalysis} />);
+  expect(screen.getByRole("button", { name: "Choose a supported file" })).toBeDisabled();
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Data file for Rainfall table" }), "b.csv");
+  await userEvent.click(screen.getByRole("button", { name: "Analyze dataset" }));
+  expect(onOpenAnalysis).toHaveBeenCalledWith("zenodo:42", "b.csv");
+});
+
 it("does not replace null metadata or relevance with zero", () => {
   const sparse = { ...EXAMPLE_DATASETS[1], instance_count: null, feature_count: null, preliminary_relevance_score: null };
   render(<DatasetLedger datasets={[sparse]} onOpenAnalysis={() => {}} />);

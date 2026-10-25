@@ -18,6 +18,7 @@ from app.api.schemas import (
 from app.assessment.gemini import GeminiService
 from app.config import settings
 from app.discovery.dataverse import HarvardDataverseService
+from app.discovery.eligibility import ELIGIBLE_STATUSES
 from app.discovery.embeddings import EmbeddingService
 from app.discovery.uci import dataset_record_from_uci
 from app.discovery.zenodo import ZenodoService
@@ -154,6 +155,7 @@ class DiscoveryService:
             logger.info("discovery stage=catalog elapsed_ms=%.1f records=%d", (time.perf_counter() - stage_started) * 1000, len(catalog))
             stage_started = time.perf_counter()
             candidates = self._rank_catalog(catalog, interpretation, 12)
+            candidates = self._expand_uci_candidates(catalog, candidates, interpretation)
             logger.info("discovery stage=filter elapsed_ms=%.1f candidates=%d", (time.perf_counter() - stage_started) * 1000, len(candidates))
             stage_started = time.perf_counter()
             uci_records = self._enrich(candidates, warnings)
@@ -166,6 +168,7 @@ class DiscoveryService:
             [dataset_record_from_uci(record) for record in uci_records]
             + external_records
         )
+        records = self._select_eligible(records, warnings)
         logger.info(
             "discovery stage=aggregation elapsed_ms=%.1f records=%d",
             (time.perf_counter() - stage_started) * 1000,
@@ -187,11 +190,24 @@ class DiscoveryService:
             stage_started = time.perf_counter()
             score_rows = self._score_concepts(concepts, records)
             ranked = self._fuse_concept_scores(records, concepts, score_rows)
-            results = [
-                self._result_from_semantic_score(record, score, self._concept_matches(
-                    record, concepts, score_rows
+            included = []
+            for record, score in ranked:
+                if score < settings.discovery_relevance_floor:
+                    continue
+                included.append((
+                    record,
+                    score,
+                    self._concept_matches(record, concepts, score_rows),
                 ))
-                for record, score in ranked
+            if ranked and not included:
+                warnings.append(
+                    "Eligible datasets were found, but none met the semantic relevance floor. "
+                    "Weak matches were not added to fill the result limit."
+                )
+            included = included[:limit]
+            results = [
+                self._result_from_semantic_score(record, score, matches)
+                for record, score, matches in included
             ]
             logger.info(
                 "discovery stage=semantic_ranking elapsed_ms=%.1f candidates=%d",
@@ -207,7 +223,7 @@ class DiscoveryService:
             )
             self._cache[cache_key] = (time.monotonic(), response)
             self._graph_records[cache_key] = (
-                time.monotonic(), interpretation, tuple(record for record, _ in ranked[:limit])
+                time.monotonic(), interpretation, tuple(record for record, _, _ in included)
             )
             logger.info("discovery stage=response elapsed_ms=%.1f", (time.perf_counter() - started) * 1000)
             return response
@@ -216,15 +232,21 @@ class DiscoveryService:
                 f"Semantic embedding ranking unavailable; used metadata keyword fallback: "
                 f"{self._safe_error(error)}"
             )
+            fallback = self._fallback_results(records, interpretation)[:limit]
+            fallback_ids = {item.dataset_id for item in fallback}
             response = (
                 interpretation,
-                self._fallback_results(records, interpretation)[:limit],
+                fallback,
                 warnings,
                 "keyword_fallback" if interpretation_failed else "partial_gemini",
                 "keyword_fallback",
             )
             self._cache[cache_key] = (time.monotonic(), response)
-            self._graph_records[cache_key] = (time.monotonic(), interpretation, tuple(records[:limit]))
+            self._graph_records[cache_key] = (
+                time.monotonic(),
+                interpretation,
+                tuple(record for record in records if record.id in fallback_ids),
+            )
             logger.info("discovery stage=response_fallback elapsed_ms=%.1f", (time.perf_counter() - started) * 1000)
             return response
 
@@ -236,9 +258,7 @@ class DiscoveryService:
         queries = list(dict.fromkeys(concept.query for concept in concepts if concept.query))
         queries = queries[: max(1, settings.discovery_candidate_limit)]
         records: list[DatasetRecord] = []
-        records_by_source: dict[str, list[DatasetRecord]] = {
-            provider.source: [] for provider in self.providers
-        }
+        results_by_key: dict[tuple[str, str], list[DatasetRecord]] = {}
         workers = min(
             max(1, settings.discovery_source_concurrency),
             len(self.providers) * max(1, len(queries)),
@@ -252,17 +272,24 @@ class DiscoveryService:
             for future in as_completed(futures):
                 provider, query = futures[future]
                 try:
-                    records_by_source[provider.source].extend(future.result())
+                    results_by_key[(provider.source, query)] = list(future.result())
                 except Exception as error:
+                    results_by_key[(provider.source, query)] = []
                     warnings.append(
                         f"{provider.source} unavailable for query '{query}': {self._safe_error(error)}"
                     )
+        # Query order is the concept order, not thread-completion order.
+        cap = max(1, settings.discovery_candidate_limit)
         for provider in self.providers:
-            source_records = records_by_source[provider.source]
-            source_limit = getattr(
-                provider, "default_limit", settings.discovery_candidate_limit
-            )
-            records.extend(source_records[:source_limit])
+            combined: list[DatasetRecord] = []
+            seen: set[str] = set()
+            for query in queries:
+                for record in results_by_key.get((provider.source, query), []):
+                    if record.id in seen:
+                        continue
+                    seen.add(record.id)
+                    combined.append(record)
+            records.extend(combined[:cap])
         return records
 
     @staticmethod
@@ -423,6 +450,118 @@ class DiscoveryService:
     def _cache_ttl(response: tuple) -> int:
         return 300 if response[3] == "gemini" else 30
 
+    def _expand_uci_candidates(
+        self,
+        catalog: list[UCIRecord],
+        lexical: list[UCIRecord],
+        interpretation: ResearchInterpretation,
+    ) -> list[UCIRecord]:
+        """Let a bounded set of non-overlapping titles reach the embedding ranker.
+
+        Lexical overlap remains the primary gate. Remaining slots are offered to
+        catalog records that share no tokens, but only when the question embedding
+        scores them at or above the relevance floor. This admits paraphrases
+        without sending the whole catalog to metadata enrichment.
+        """
+        cap = 12
+        if len(lexical) >= cap:
+            return lexical[:cap]
+        chosen = {record.dataset_id for record in lexical}
+        extras = sorted(
+            (record for record in catalog if record.dataset_id not in chosen),
+            key=lambda record: record.dataset_id,
+        )[: cap - len(lexical)]
+        if not extras:
+            return lexical
+        try:
+            adapted = [dataset_record_from_uci(record) for record in extras]
+            scores = self.embedding_service.score_queries(
+                [interpretation.original_research_question], adapted
+            )
+        except Exception:
+            return lexical
+        if not scores:
+            return lexical
+        expanded = list(lexical)
+        for record, adapted_record in zip(extras, adapted):
+            if scores[0].get(adapted_record.id, -1.0) >= settings.discovery_relevance_floor:
+                expanded.append(record)
+        return expanded[:cap]
+
+    def _select_eligible(
+        self, records: list[DatasetRecord], warnings: list[str]
+    ) -> list[DatasetRecord]:
+        selected: list[DatasetRecord] = []
+        pending: list[DatasetRecord] = []
+        for record in records:
+            if record.source == "UCI Machine Learning Repository":
+                marked = self._mark_uci(record)
+                if marked is not None:
+                    selected.append(marked)
+                continue
+            if record.eligibility_status in ELIGIBLE_STATUSES and any(
+                resource.eligible for resource in record.download_resources
+            ):
+                selected.append(record)
+                continue
+            if record.eligibility_status == "unverified":
+                pending.append(record)
+        if pending:
+            selected.extend(self._verify_pending(pending, warnings))
+        selected.sort(key=lambda record: record.id)
+        return selected
+
+    def _verify_pending(
+        self, pending: list[DatasetRecord], warnings: list[str]
+    ) -> list[DatasetRecord]:
+        providers = {provider.source: provider for provider in self.providers}
+
+        def verify_one(record: DatasetRecord) -> DatasetRecord | None:
+            verify = getattr(providers.get(record.source), "verify", None)
+            if not callable(verify):
+                return None
+            verified = verify(record)
+            if isinstance(verified, DatasetRecord) and verified.eligibility_status in ELIGIBLE_STATUSES:
+                return verified
+            return None
+
+        verified: list[DatasetRecord] = []
+        workers = min(max(1, settings.discovery_metadata_concurrency), len(pending))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(verify_one, record): record for record in pending}
+            for future in as_completed(futures):
+                record = futures[future]
+                try:
+                    result = future.result()
+                except Exception as error:
+                    warnings.append(
+                        f"{record.source} metadata verification failed for {record.id}: "
+                        f"{self._safe_error(error)}"
+                    )
+                    continue
+                if result is not None:
+                    verified.append(result)
+        return verified
+
+    @staticmethod
+    def _mark_uci(record: DatasetRecord) -> DatasetRecord | None:
+        if record.data_available is False:
+            return None
+        return record.model_copy(update={
+            "eligibility_status": "supported_resource_verified",
+            "eligibility_reason": (
+                "UCI native retrieval path is available. Discovery did not download the table."
+            ),
+            "data_available": True,
+            "download_performed": False,
+        })
+
+    @staticmethod
+    def _data_status(record: DatasetRecord) -> str:
+        if record.eligibility_status in ELIGIBLE_STATUSES:
+            return "available"
+        return "metadata_only"
+
     @staticmethod
     def _rank_catalog(
         catalog: list[UCIRecord], interpretation: ResearchInterpretation, count: int
@@ -473,7 +612,7 @@ class DiscoveryService:
                     **DiscoveryService._legacy_record(record).model_dump(),
                     source=record.source,
                     **DiscoveryService._normalized_result_fields(record),
-                    data_status="available" if record.data_available else "metadata_only",
+                    data_status=DiscoveryService._data_status(record),
                     preliminary_relevance_score=score,
                     relevance_explanation=(
                         f"Verified metadata matched: {', '.join(matches[:6])}. "
@@ -512,7 +651,7 @@ class DiscoveryService:
             **DiscoveryService._legacy_record(record).model_dump(),
             source=record.source,
             **DiscoveryService._normalized_result_fields(record),
-            data_status="available" if record.data_available else "metadata_only",
+            data_status=DiscoveryService._data_status(record),
             **assessment.model_copy(
                 update={"relevance_explanation": explanation}
             ).model_dump(exclude={"dataset_id"}),
@@ -526,7 +665,7 @@ class DiscoveryService:
             **DiscoveryService._legacy_record(record).model_dump(),
             source=record.source,
             **DiscoveryService._normalized_result_fields(record),
-            data_status="available" if record.data_available else "metadata_only",
+            data_status=DiscoveryService._data_status(record),
             semantic_similarity_score=score,
             score_type="semantic_similarity",
             concept_matches=concept_matches,
@@ -572,6 +711,10 @@ class DiscoveryService:
             "temporal_coverage": record.temporal_coverage,
             "doi": record.doi,
             "license": record.license,
+            "eligibility_status": record.eligibility_status,
+            "eligibility_reason": record.eligibility_reason,
+            "download_performed": record.download_performed,
+            "source_version": record.source_version,
         }
 
     @staticmethod

@@ -15,11 +15,14 @@ from app.api.schemas import (
     ExploratoryAnalysisResponse,
     ResearchInterpretation,
     ResearchAssessment,
+    UCIRecord,
 )
 from app.assessment.gemini import GeminiService
 from app.assessment.suitability import calculate_final_score
 from app.config import settings
 from app.discovery.uci import UCIRepositoryError, dataset_record_from_uci
+from app.ingestion.guard import DownloadRejected
+from app.ingestion.retrieve import SelectionError, load_table
 from app.profiling.profiler import DataProfiler
 from app.analysis.exploratory import ExploratoryAnalyzer
 from app.research.repository import (
@@ -40,11 +43,20 @@ class DatasetAnalysisService:
         self.gemini = gemini
         self.profiler = DataProfiler()
         self.exploratory = ExploratoryAnalyzer()
-        self._cache: dict[tuple[str, str], DatasetAnalysisResponse] = {}
+        self._cache: dict[tuple[str, str, str], DatasetAnalysisResponse] = {}
         self._data_cache: dict[int, tuple[object, object, object]] = {}
+        self._frames: dict[tuple[str, str], pd.DataFrame] = {}
 
-    def analyze(self, dataset_id: str, request: AnalysisRequest) -> DatasetAnalysisResponse:
-        key = (dataset_id, request.research_question.strip().lower())
+    def analyze(
+        self,
+        dataset_id: str,
+        request: AnalysisRequest,
+        user_sub: str | None = None,
+    ) -> DatasetAnalysisResponse:
+        # The response cache includes the verified subject so one researcher's
+        # assessment is not reused for another account. Dataset frames stay
+        # shared because they are public source data, not private research.
+        key = (user_sub or "", dataset_id, request.research_question.strip().lower())
         if key in self._cache:
             return self._cache[key]
         numeric_id = self._parse_id(dataset_id)
@@ -87,6 +99,7 @@ class DatasetAnalysisService:
                 source_version,
                 dataset_database_id,
                 warnings,
+                user_sub,
             )
         except Exception as error:
             warnings.append(f"AI suitability assessment unavailable: {self._safe(error)}")
@@ -100,6 +113,148 @@ class DatasetAnalysisService:
         )
         self._cache[key] = response
         return response
+
+    def analyze_selected(
+        self,
+        dataset_id: str,
+        research_question: str,
+        resource_id: str | None = None,
+        user_sub: str | None = None,
+    ) -> DatasetAnalysisResponse:
+        """Analyze UCI natively or one re-resolved external file."""
+        if dataset_id.startswith("uci:"):
+            return self.analyze(
+                dataset_id,
+                AnalysisRequest(research_question=research_question),
+                user_sub=user_sub,
+            )
+        key = (
+            user_sub or "",
+            dataset_id,
+            resource_id or "",
+            research_question.strip().lower(),
+        )
+        cached = self._cache.get(key)
+        if cached is not None:
+            return cached
+        warnings: list[str] = []
+        interpretation = self._interpret(research_question, warnings)
+        try:
+            record, resource, frame, inconclusive = load_table(dataset_id, resource_id)
+        except (SelectionError, DownloadRejected) as error:
+            raise
+        except Exception as error:
+            raise DownloadRejected(self._safe(error)) from error
+        if inconclusive:
+            warnings.append(
+                "Provider type metadata was inconclusive. The file was parsed before it was marked download-verified."
+            )
+        resolved_id = resource.file_id or resource.filename or resource_id or ""
+        self._frames[(dataset_id, resolved_id)] = frame
+        if resource_id:
+            self._frames[(dataset_id, resource_id)] = frame
+        elif resolved_id:
+            self._frames[(dataset_id, "")] = frame
+        verified = record.model_copy(update={
+            "title": record.title if record.title != "Pending provider metadata" else record.title,
+            "eligibility_status": "download_verified",
+            "eligibility_reason": (
+                f"Parsed {resource.filename or resource.file_id} "
+                f"({len(frame)} rows, {len(frame.columns)} columns) from the provider response."
+            ),
+            "download_performed": True,
+            "download_resources": [resource],
+            "data_available": True,
+        })
+        source_version = verified.source_version or resource.checksum or resolved_id
+        profile, dataset_database_id = self._profile_record(
+            verified, source_version, frame, interpretation, warnings
+        )
+        metadata = self._public_record(verified)
+        assessment: ResearchAssessment | None = None
+        try:
+            if interpretation is None:
+                raise RuntimeError("Research question interpretation was unavailable.")
+            assessment = self._cached_or_assess(
+                research_question,
+                interpretation,
+                metadata,
+                profile,
+                source_version,
+                dataset_database_id,
+                warnings,
+                user_sub,
+            )
+        except Exception as error:
+            warnings.append(f"AI suitability assessment unavailable: {self._safe(error)}")
+        response = DatasetAnalysisResponse(
+            dataset=metadata,
+            data_status="analyzed",
+            profile=profile,
+            assessment=assessment,
+            ai_assessment_status="available" if assessment else "unavailable",
+            warnings=warnings,
+            analyzed_resource=resource,
+            eligibility_status="download_verified",
+            download_performed=True,
+        )
+        self._cache[key] = response
+        return response
+
+    def _profile_record(
+        self,
+        record,
+        source_version: str,
+        dataframe: pd.DataFrame,
+        interpretation: ResearchInterpretation | None,
+        warnings: list[str],
+    ) -> tuple[DataProfile, int | None]:
+        dataset_database_id: int | None = None
+        cached_profile: dict[str, Any] | None = None
+        try:
+            dataset_database_id = upsert_dataset(record)
+            cached_profile = get_dataset_profile(
+                dataset_database_id,
+                source_version,
+                self.profiler.PROFILER_VERSION,
+            )
+        except Exception:
+            warnings.append(
+                "Persistent profile cache unavailable; computed profile was not cached."
+            )
+        if cached_profile is not None:
+            try:
+                return DataProfile.model_validate(cached_profile), dataset_database_id
+            except Exception:
+                warnings.append("Stored profile was invalid and was recomputed.")
+        profile = self.profiler.profile(dataframe, interpretation, {})
+        if dataset_database_id is not None:
+            try:
+                save_dataset_profile(
+                    dataset_database_id,
+                    source_version,
+                    self.profiler.PROFILER_VERSION,
+                    DataProfile.model_validate(profile),
+                )
+            except Exception:
+                warnings.append(
+                    "Persistent profile cache save failed; computed profile is available."
+                )
+        return profile, dataset_database_id
+
+    @staticmethod
+    def _public_record(record) -> UCIRecord:
+        if record.landing_page_url is None:
+            raise SelectionError(f"{record.id} has no landing page.")
+        return UCIRecord(
+            dataset_id=record.id,
+            title=record.title,
+            description=record.description,
+            repository_url=record.landing_page_url,
+            subject_area=record.subjects[0] if record.subjects else None,
+            variables=[variable.name for variable in record.variables],
+            data_available=True,
+        )
 
     def _cached_or_profile(
         self,
@@ -178,6 +333,7 @@ class DatasetAnalysisService:
         source_version: str,
         dataset_database_id: int | None,
         warnings: list[str],
+        user_sub: str | None = None,
     ) -> ResearchAssessment:
         cache_key = self._assessment_cache_key(
             research_question,
@@ -185,6 +341,7 @@ class DatasetAnalysisService:
             dataset,
             profile,
             source_version,
+            user_sub,
         )
         if dataset_database_id is not None:
             try:
@@ -238,9 +395,11 @@ class DatasetAnalysisService:
         dataset: Any,
         profile: DataProfile,
         source_version: str,
+        user_sub: str | None = None,
     ) -> str:
         normalized_question = " ".join(research_question.strip().split()).lower()
         payload = {
+            "owner_sub": user_sub or "",
             "normalized_research_question": normalized_question,
             "interpretation": interpretation.model_dump(mode="json"),
             "dataset_identity": {
@@ -317,6 +476,19 @@ class DatasetAnalysisService:
     def explore(
         self, dataset_id: str, request: ExploreRequest
     ) -> ExploratoryAnalysisResponse:
+        if not dataset_id.startswith("uci:"):
+            key = (dataset_id, request.resource_id or "")
+            frame = self._frames.get(key)
+            if frame is None:
+                raise SelectionError(
+                    "Analyze the selected file before requesting a grouped summary."
+                )
+            return self.exploratory.analyze(
+                dataset_id,
+                frame,
+                request.independent_variable,
+                request.outcome_variable,
+            )
         numeric_id = self._parse_id(dataset_id)
         if numeric_id not in self._data_cache:
             self._data_cache[numeric_id] = self.repository.fetch_dataset(numeric_id)

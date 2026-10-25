@@ -53,14 +53,24 @@ def _row_to_query(row: tuple[Any, ...]) -> ResearchQuery:
     }
 
 
+def _require_owner(user_sub: str) -> str:
+    """Use only a verified subject. Client-supplied ids never reach this helper."""
+    if not isinstance(user_sub, str) or not user_sub.strip():
+        raise ValueError("A verified research owner is required.")
+    return user_sub.strip()
+
+
 def save_research_question(
     question: str,
     normalized_question: str | None = None,
     embedding_service: Any | None = None,
+    *,
+    user_sub: str,
 ) -> ResearchQuery:
     """Persist one research question using the shared database connection pool."""
     # The existing schema requires normalized_question. When no normalized form is
     # available, retaining the original question is the lossless fallback.
+    owner = _require_owner(user_sub)
     stored_normalized_question = normalized_question or question
     embedding, embedding_model = _question_embedding(
         stored_normalized_question, embedding_service
@@ -72,21 +82,28 @@ def save_research_question(
             if embedding is None:
                 row = connection.execute(
                     """
-                    INSERT INTO research_queries (question, normalized_question)
-                    VALUES (%s, %s)
+                    INSERT INTO research_queries
+                        (question, normalized_question, user_sub)
+                    VALUES (%s, %s, %s)
                     RETURNING id, question, normalized_question, created_at
                     """,
-                    (question, stored_normalized_question),
+                    (question, stored_normalized_question, owner),
                 ).fetchone()
             else:
                 row = connection.execute(
                     """
                     INSERT INTO research_queries
-                        (question, normalized_question, embedding, embedding_model)
-                    VALUES (%s, %s, %s::vector, %s)
+                        (question, normalized_question, embedding, embedding_model, user_sub)
+                    VALUES (%s, %s, %s::vector, %s, %s)
                     RETURNING id, question, normalized_question, created_at
                     """,
-                    (question, stored_normalized_question, embedding, embedding_model),
+                    (
+                        question,
+                        stored_normalized_question,
+                        embedding,
+                        embedding_model,
+                        owner,
+                    ),
                 ).fetchone()
             if row is None:
                 raise RuntimeError("The research query insert returned no row")
@@ -103,45 +120,51 @@ def save_research_question(
         raise
 
 
-def list_recent_research_questions(limit: int = 20) -> list[ResearchQuery]:
-    """Return the newest persisted research questions first."""
+def list_recent_research_questions(user_sub: str, limit: int = 20) -> list[ResearchQuery]:
+    """Return the newest questions owned by this verified subject."""
+    owner = _require_owner(user_sub)
     with get_connection() as connection:
         rows = connection.execute(
             """
             SELECT id, question, normalized_question, created_at
             FROM research_queries
+            WHERE user_sub = %s
             ORDER BY created_at DESC, id DESC
             LIMIT %s
             """,
-            (limit,),
+            (owner, limit),
         ).fetchall()
         return [_row_to_query(row) for row in rows]
 
 
-def get_research_question(query_id: int) -> ResearchQuery | None:
-    """Return a persisted research question by ID, if it exists."""
+def get_research_question(query_id: int, user_sub: str) -> ResearchQuery | None:
+    """Return one owned question. Missing and unauthorized ids both return None."""
+    owner = _require_owner(user_sub)
     with get_connection() as connection:
         row = connection.execute(
             """
             SELECT id, question, normalized_question, created_at
             FROM research_queries
             WHERE id = %s
+              AND user_sub = %s
             """,
-            (query_id,),
+            (query_id, owner),
         ).fetchone()
         return None if row is None else _row_to_query(row)
 
 
-def get_research_session(query_id: int) -> ResearchQuery | None:
+def get_research_session(query_id: int, user_sub: str) -> ResearchQuery | None:
     """Return a saved query with only persisted matches and linked assessments."""
+    owner = _require_owner(user_sub)
     with get_connection() as connection:
         query_row = connection.execute(
             """
             SELECT id, question, normalized_question, created_at
             FROM research_queries
             WHERE id = %s
+              AND user_sub = %s
             """,
-            (query_id,),
+            (query_id, owner),
         ).fetchone()
         if query_row is None:
             return None
@@ -150,20 +173,24 @@ def get_research_session(query_id: int) -> ResearchQuery | None:
             SELECT d.metadata, m.rank, m.relevance_score, m.explanation
             FROM query_dataset_matches AS m
             JOIN datasets AS d ON d.id = m.dataset_id
+            JOIN research_queries AS q ON q.id = m.query_id
             WHERE m.query_id = %s
+              AND q.user_sub = %s
             ORDER BY m.rank NULLS LAST, d.id
             """,
-            (query_id,),
+            (query_id, owner),
         ).fetchall()
         assessment_rows = connection.execute(
             """
-            SELECT dataset_id, model, assessment_version, assessment,
-                   suitability_score, created_at
-            FROM research_assessments
-            WHERE query_id = %s
-            ORDER BY created_at DESC, id DESC
+            SELECT a.dataset_id, a.model, a.assessment_version, a.assessment,
+                   a.suitability_score, a.created_at
+            FROM research_assessments AS a
+            JOIN research_queries AS q ON q.id = a.query_id
+            WHERE a.query_id = %s
+              AND q.user_sub = %s
+            ORDER BY a.created_at DESC, a.id DESC
             """,
-            (query_id,),
+            (query_id, owner),
         ).fetchall()
         result = _row_to_query(query_row)
         result["datasets"] = [
@@ -318,8 +345,11 @@ def persist_discovery_result(
     normalized_question: str | None,
     datasets: list[DatasetResult],
     embedding_service: Any | None = None,
+    *,
+    user_sub: str,
 ) -> int:
     """Atomically persist a live discovery query, datasets, and relationships."""
+    owner = _require_owner(user_sub)
     connection = None
     started = time.perf_counter()
     embedding_started = time.perf_counter()
@@ -343,21 +373,28 @@ def persist_discovery_result(
             if embedding is None:
                 query_row = connection.execute(
                     """
-                    INSERT INTO research_queries (question, normalized_question)
-                    VALUES (%s, %s)
+                    INSERT INTO research_queries
+                        (question, normalized_question, user_sub)
+                    VALUES (%s, %s, %s)
                     RETURNING id
                     """,
-                    (question, stored_normalized_question),
+                    (question, stored_normalized_question, owner),
                 ).fetchone()
             else:
                 query_row = connection.execute(
                     """
                     INSERT INTO research_queries
-                        (question, normalized_question, embedding, embedding_model)
-                    VALUES (%s, %s, %s::vector, %s)
+                        (question, normalized_question, embedding, embedding_model, user_sub)
+                    VALUES (%s, %s, %s::vector, %s, %s)
                     RETURNING id
                     """,
-                    (question, stored_normalized_question, embedding, embedding_model),
+                    (
+                        question,
+                        stored_normalized_question,
+                        embedding,
+                        embedding_model,
+                        owner,
+                    ),
                 ).fetchone()
             logger.info(
                 "discovery persistence stage=research_question_insert elapsed_ms=%.1f",
@@ -424,9 +461,10 @@ def persist_discovery_result(
 
 
 def find_similar_research_questions(
-    embedding: Any, embedding_model: str, limit: int = 5
+    embedding: Any, embedding_model: str, user_sub: str, limit: int = 5
 ) -> list[ResearchQuery]:
-    """Find top exact-model matches using pgvector cosine distance."""
+    """Find top exact-model matches owned by this verified subject."""
+    owner = _require_owner(user_sub)
     if limit <= 0:
         return []
     vector = _vector_literal(embedding)
@@ -442,10 +480,11 @@ def find_similar_research_questions(
             FROM research_queries
             WHERE embedding IS NOT NULL
               AND embedding_model = %s
+              AND user_sub = %s
             ORDER BY embedding <=> %s::vector
             LIMIT %s
             """,
-            (vector, embedding_model, vector, min(limit, 5)),
+            (vector, embedding_model, owner, vector, min(limit, 5)),
         ).fetchall()
         return [
             {

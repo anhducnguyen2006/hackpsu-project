@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     gemini_request_timeout_ms: int = 15000
     discovery_source_concurrency: int = 3
     discovery_candidate_limit: int = 12
+    discovery_metadata_concurrency: int = 4
+    discovery_max_resource_bytes: int = 52_428_800
+    discovery_relevance_floor: float = 0.20
     embedding_model_name: str = "BAAI/bge-small-en-v1.5"
     embedding_model_version: str = "1"
     embedding_top_k: int = 12
@@ -29,6 +32,24 @@ class Settings(BaseSettings):
     zenodo_api_url: str = "https://zenodo.org/api/records/"
     zenodo_results_limit: int = 5
     demo_mode: bool = False
+    # Auth0 API access tokens. Empty values fail closed on protected routes.
+    # Audience is the API identifier from the Auth0 Dashboard, not the SPA client ID.
+    auth0_domain: str = ""
+    auth0_audience: str = ""
+    auth0_issuer: str = ""
+    auth0_jwks_cache_seconds: int = 600
+    auth0_required_scope: str = ""
+    dev_routes_enabled: bool = False
+    # Process-local limits per authenticated subject. Not shared across workers.
+    auth_discovery_limit: int = 10
+    auth_discovery_window_seconds: int = 60
+    auth_discovery_concurrency: int = 2
+    auth_analysis_limit: int = 6
+    auth_analysis_window_seconds: int = 60
+    auth_analysis_concurrency: int = 1
+    auth_similarity_limit: int = 20
+    auth_similarity_window_seconds: int = 60
+    auth_similarity_concurrency: int = 2
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[1] / ".env",

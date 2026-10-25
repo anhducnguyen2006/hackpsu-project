@@ -1,8 +1,25 @@
 export type DatasetStatus = "metadata_only" | "available" | "failed" | "analyzed";
 
+export type EligibilityStatus =
+  | "supported_resource_verified"
+  | "download_verified"
+  | "unsupported"
+  | "restricted"
+  | "verification_failed"
+  | "unverified";
+
 export interface DownloadResource {
   url: string;
   format: string;
+  file_id?: string | null;
+  filename?: string | null;
+  original_filename?: string | null;
+  content_type?: string | null;
+  original_format?: string | null;
+  size_bytes?: number | null;
+  checksum?: string | null;
+  access_status?: string | null;
+  eligible?: boolean;
 }
 
 export interface ConceptMatch {
@@ -35,6 +52,10 @@ export interface DatasetCardData {
   temporal_coverage?: string[];
   doi?: string | null;
   license?: string | null;
+  eligibility_status?: EligibilityStatus;
+  eligibility_reason?: string | null;
+  download_performed?: boolean;
+  source_version?: string | null;
   data_status: DatasetStatus;
   preliminary_relevance_score: number | null;
   semantic_similarity_score?: number | null;
@@ -204,6 +225,9 @@ export interface DatasetAnalysisResponse {
   assessment: ResearchAssessment | null;
   ai_assessment_status: "available" | "unavailable";
   warnings: string[];
+  analyzed_resource?: DownloadResource | null;
+  eligibility_status?: EligibilityStatus | null;
+  download_performed?: boolean;
 }
 
 export interface ExploratoryAnalysisResponse {

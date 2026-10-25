@@ -1,7 +1,14 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
+import type { AuthorizedFetch } from "./auth/api";
 import App from "./App";
+
+const authorizedFetch: AuthorizedFetch = (input, init) => {
+  const headers = new Headers(init?.headers);
+  headers.set("Authorization", "Bearer test-token");
+  return fetch(input, { ...init, headers });
+};
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
@@ -70,6 +77,9 @@ it("renders the live interpretation and discovery response", async () => {
         feature_count: 2,
         data_available: true,
         data_status: "available",
+        eligibility_status: "supported_resource_verified",
+        eligibility_reason: "UCI native retrieval path is available.",
+        download_performed: false,
         preliminary_relevance_score: null,
         semantic_similarity_score: 0.88,
         score_type: "semantic_similarity",
@@ -86,7 +96,7 @@ it("renders the live interpretation and discovery response", async () => {
       ranking_status: "semantic_embeddings",
     }),
   } as Response);
-  render(<App />);
+  render(<App authorizedFetch={authorizedFetch} />);
   await userEvent.type(screen.getByRole("textbox", { name: "Research question" }), "Does rainfall relate to crop yield?");
   await userEvent.click(screen.getByRole("button", { name: "Find datasets" }));
 
@@ -95,8 +105,47 @@ it("renders the live interpretation and discovery response", async () => {
   expect(screen.getByText("Live repository search")).toBeVisible();
   await userEvent.click(screen.getByRole("button", { name: "Datasets" }));
   expect(await screen.findByText("Live Crop Dataset")).toBeVisible();
+  expect(screen.getByText("0.88")).toBeVisible();
+  expect(screen.getByText("Cosine similarity, not a probability or suitability score")).toBeVisible();
+  expect(screen.getByText("supported resource verified; not downloaded")).toBeVisible();
   expect(request).toHaveBeenCalledWith("http://localhost:8000/api/v1/discovery/search", expect.objectContaining({
     method: "POST",
     body: JSON.stringify({ research_question: "Does rainfall relate to crop yield?", limit: 12 }),
   }));
+  const searchCall = request.mock.calls.find((call) => String(call[0]).endsWith("/discovery/search"));
+  const graphCall = request.mock.calls.find((call) => String(call[0]).endsWith("/discovery/graph"));
+  expect(new Headers(searchCall?.[1]?.headers).get("Authorization")).toBe("Bearer test-token");
+  expect(new Headers(graphCall?.[1]?.headers).get("Authorization")).toBe("Bearer test-token");
+});
+
+it("keeps the application visible when a live interpretation array is malformed", async () => {
+  vi.stubEnv("VITE_API_BASE_URL", "http://localhost:8000");
+  vi.spyOn(globalThis, "fetch").mockResolvedValue({
+    ok: true,
+    json: async () => ({
+      interpretation: {
+        original_research_question: "Does rainfall relate to crop yield?",
+        research_subject: "crop yield",
+        independent_variables: ["rainfall"],
+        dependent_variables: null,
+        target_population: "farms",
+        synonyms: ["precipitation"],
+        assumptions_or_ambiguities: null,
+        search_terms: ["rainfall", "crop", "yield"],
+      },
+      datasets: [],
+      explanation: "Live repository results.",
+      warnings: [],
+      processing_mode: "gemini",
+      ranking_status: "semantic_embeddings",
+    }),
+  } as Response);
+  render(<App authorizedFetch={authorizedFetch} />);
+  await userEvent.type(screen.getByRole("textbox", { name: "Research question" }), "Does rainfall relate to crop yield?");
+  await userEvent.click(screen.getByRole("button", { name: "Find datasets" }));
+  expect(await screen.findByRole("heading", { name: "Interpretation" })).toBeVisible();
+  expect(screen.getByText("DataOPedia")).toBeVisible();
+  expect(screen.getAllByText("rainfall").length).toBeGreaterThan(0);
+  expect(screen.getByText(/Outcome variables were missing/)).toBeVisible();
+  expect(screen.queryByText(/did not match the expected contract/)).toBeVisible();
 });
