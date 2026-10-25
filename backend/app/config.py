@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     zenodo_enabled: bool = True
     zenodo_api_url: str = "https://zenodo.org/api/records/"
     zenodo_results_limit: int = 5
+    analysis_max_download_bytes: int = 25 * 1024 * 1024
+    analysis_max_metadata_bytes: int = 2 * 1024 * 1024
+    analysis_max_rows: int = 100_000
+    analysis_max_columns: int = 500
+    analysis_max_redirects: int = 3
+    analysis_download_concurrency: int = 2
     demo_mode: bool = False
 
     model_config = SettingsConfigDict(

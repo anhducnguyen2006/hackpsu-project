@@ -110,6 +110,47 @@ Errors:
 
 If data retrieval fails, verified metadata is preserved as `metadata_only`. If Gemini fails, the deterministic profile is preserved and the AI assessment is unavailable.
 
+## `GET /datasets/resources`
+
+Resolves a verified UCI, Dataverse, or Zenodo dataset and lists its eligible tabular resources. The dataset ID is a query parameter so persistent identifiers containing slashes are not parsed as path segments.
+
+Example:
+
+```text
+GET /api/v1/datasets/resources?dataset_id=dataverse:doi:10.5072/FK2/ABC
+```
+
+The response includes the source-prefixed dataset ID, source metadata, stable provider resource IDs, filename, `csv`/`tsv` format, size/checksum/version when supplied, and the provider-approved source URL. Restricted, inaccessible, archive, PDF, notebook, executable, and other unsupported files are excluded.
+
+Possible statuses are `metadata_found`, `source_verified`, `file_metadata_available`, `compatible_tabular_available`, `unsupported`, and `unavailable`.
+
+## `POST /datasets/source-analyze`
+
+Analyzes one explicitly selected tabular resource from UCI, Harvard Dataverse, or Zenodo using the same deterministic Pandas profiler and optional Gemini suitability pipeline used by UCI analysis.
+
+Request:
+
+```json
+{
+  "dataset_id": "zenodo:12345",
+  "resource_id": "zenodo-file:observations.csv",
+  "research_question": "Does rainfall relate to crop yield?"
+}
+```
+
+`resource_id` is optional only when exactly one eligible resource exists. It is required when multiple eligible files are available. The endpoint never accepts an arbitrary download URL.
+
+The response contains:
+
+- `dataset`: verified source-neutral metadata, including DOI/license where supplied
+- `resource`: selected filename, format, size, checksum, version, and verified provider URL
+- `status` and `completed_states`: explicit retrieval/profiling/assessment progress
+- `profile`: the shared deterministic Pandas profile
+- `assessment` and `ai_assessment_status`
+- `provenance` and sanitized warnings
+
+Supported resource formats are UTF-8 CSV and TSV/tab-separated text. Downloads are bounded by `ANALYSIS_MAX_DOWNLOAD_BYTES`; parsed tables are limited by `ANALYSIS_MAX_ROWS` and `ANALYSIS_MAX_COLUMNS`. HTTPS destinations are restricted to the official Dataverse or Zenodo hosts, redirects are revalidated, private/local destinations are rejected, and archives or executable content are never extracted or executed.
+
 ## `POST /datasets/{dataset_id}/explore`
 
 Computes grouped descriptive statistics for a verified independent variable and numeric outcome.

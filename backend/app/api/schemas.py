@@ -278,6 +278,57 @@ class AnalysisRequest(BaseModel):
     research_question: str = Field(min_length=10, max_length=2000)
 
 
+class AnalysisResource(BaseModel):
+    """A provider-verified tabular resource eligible for bounded analysis."""
+
+    resource_id: str
+    dataset_id: str
+    source: str
+    filename: str
+    format: Literal["csv", "tsv"]
+    mime_type: str | None = None
+    size_bytes: int | None = Field(default=None, ge=0)
+    checksum: str | None = None
+    version: str | None = None
+    source_url: HttpUrl
+    eligible: bool
+    eligibility_reason: str
+
+
+class AnalysisProvenance(BaseModel):
+    provider: str
+    dataset_id: str
+    source_id: str
+    resource_id: str | None = None
+    filename: str | None = None
+    format: str | None = None
+    version: str | None = None
+    checksum: str | None = None
+    doi: str | None = None
+    license: str | None = None
+    source_url: HttpUrl | None = None
+
+
+class SourceAnalysisRequest(BaseModel):
+    dataset_id: str = Field(min_length=3, max_length=500)
+    research_question: str = Field(min_length=10, max_length=2000)
+    resource_id: str | None = Field(default=None, min_length=1, max_length=500)
+
+
+class DatasetResourcesResponse(BaseModel):
+    dataset: DatasetRecord
+    status: Literal[
+        "metadata_found",
+        "source_verified",
+        "file_metadata_available",
+        "compatible_tabular_available",
+        "unsupported",
+        "unavailable",
+    ]
+    resources: list[AnalysisResource] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class NumericSummary(BaseModel):
     count: int
     mean: float | None = None
@@ -379,6 +430,31 @@ class DatasetAnalysisResponse(BaseModel):
     assessment: ResearchAssessment | None = None
     ai_assessment_status: Literal["available", "unavailable"] = "unavailable"
     warnings: list[str] = []
+
+
+class SourceAnalysisResponse(BaseModel):
+    dataset: DatasetRecord
+    resource: AnalysisResource | None = None
+    status: Literal[
+        "metadata_found",
+        "source_verified",
+        "file_metadata_available",
+        "compatible_tabular_available",
+        "file_accessible",
+        "file_downloaded",
+        "file_parsed",
+        "profile_available",
+        "assessment_available",
+        "unsupported",
+        "unavailable",
+        "failed",
+    ]
+    completed_states: list[str] = Field(default_factory=list)
+    profile: DataProfile | None = None
+    assessment: ResearchAssessment | None = None
+    ai_assessment_status: Literal["available", "unavailable"] = "unavailable"
+    provenance: AnalysisProvenance
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ExploreRequest(BaseModel):

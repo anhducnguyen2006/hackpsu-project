@@ -2,11 +2,16 @@ from fastapi import APIRouter, HTTPException
 
 from app.api.schemas import (
     AnalysisRequest,
+    DatasetResourcesResponse,
     DatasetAnalysisResponse,
     ExploreRequest,
     ExploratoryAnalysisResponse,
+    SourceAnalysisRequest,
+    SourceAnalysisResponse,
 )
 from app.analysis.service import DatasetAnalysisService
+from app.analysis.source_providers import SourceProviderError
+from app.analysis.source_service import build_source_analysis_service
 from app.assessment.gemini import GeminiService
 from app.config import settings
 from app.demo import demo_analysis, demo_exploration
@@ -15,6 +20,7 @@ from app.discovery.uci import UCIRepositoryError, UCIRepositoryService
 router = APIRouter(prefix="/dev", tags=["development"])
 adapter = UCIRepositoryService(catalog_ttl=settings.uci_catalog_ttl_seconds)
 analysis_service = DatasetAnalysisService(adapter, GeminiService())
+source_analysis_service = build_source_analysis_service()
 
 
 @router.get("/dataset-test")
@@ -27,6 +33,26 @@ def dataset_test() -> dict:
 
 
 analysis_router = APIRouter(prefix="/datasets", tags=["datasets"])
+
+
+@analysis_router.get("/resources", response_model=DatasetResourcesResponse)
+def list_analysis_resources(dataset_id: str) -> DatasetResourcesResponse:
+    try:
+        return source_analysis_service.list_resources(dataset_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except SourceProviderError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+
+@analysis_router.post("/source-analyze", response_model=SourceAnalysisResponse)
+def analyze_source_dataset(request: SourceAnalysisRequest) -> SourceAnalysisResponse:
+    try:
+        return source_analysis_service.analyze(request)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except SourceProviderError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
 
 
 @analysis_router.post("/{dataset_id}/analyze", response_model=DatasetAnalysisResponse)

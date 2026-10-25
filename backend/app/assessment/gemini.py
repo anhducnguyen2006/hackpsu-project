@@ -7,6 +7,7 @@ from typing import Any
 
 from app.api.schemas import (
     DataProfile,
+    DatasetRecord,
     RelevanceAssessmentBatch,
     ResearchAssessment,
     ResearchInterpretation,
@@ -177,7 +178,7 @@ class GeminiService:
         self,
         research_question: str,
         interpretation: ResearchInterpretation | None,
-        dataset: UCIRecord,
+        dataset: UCIRecord | DatasetRecord,
         profile: DataProfile,
     ) -> ResearchAssessment:
         if not settings.gemini_api_key and self._client is None:
