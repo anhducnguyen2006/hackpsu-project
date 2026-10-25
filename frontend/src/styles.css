@@ -32,7 +32,22 @@ input {
 }
 
 .hero {
+  position: relative;
   margin-bottom: 36px;
+}
+
+.auth-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-bottom: 24px;
+  color: #64748b;
+  font-size: 0.9rem;
+}
+
+.auth-controls .secondary-button {
+  padding: 9px 14px;
 }
 
 .eyebrow,
