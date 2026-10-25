@@ -216,15 +216,26 @@ class FakeGemini:
         )
 
 
+class FakeEmbedding:
+    def score_queries(self, queries, candidates):
+        return [
+            {candidate.id: 0.9 - index * 0.01 for index, candidate in enumerate(candidates)}
+            for _ in queries
+        ]
+
+    def rank(self, question, candidates, top_k):
+        return [(candidate, 0.9 - index * 0.01) for index, candidate in enumerate(candidates[:top_k])]
+
+
 class FakeProvider:
     def __init__(self, source: str, records: list[DatasetRecord], error: Exception | None = None):
         self.source = source
         self.records = records
         self.error = error
-        self.terms: list[str] = []
+        self.queries: list[str] = []
 
     def search(self, search_terms: Iterable[str]) -> list[DatasetRecord]:
-        self.terms = list(search_terms)
+        self.queries.append(" ".join(search_terms))
         if self.error:
             raise self.error
         return self.records
@@ -253,7 +264,10 @@ def test_multiple_sources_are_aggregated_and_terms_are_forwarded() -> None:
     zenodo = FakeProvider("Zenodo", [_external_record("zenodo", "2")])
 
     _, datasets, warnings, mode = DiscoveryService(
-        FakeUCIRepository(), FakeGemini(), [dataverse, zenodo]
+        FakeUCIRepository(),
+        FakeGemini(),
+        [dataverse, zenodo],
+        FakeEmbedding(),
     ).search("Does rainfall affect crop yield?", 8)
 
     assert {dataset.source for dataset in datasets} == {
@@ -261,8 +275,9 @@ def test_multiple_sources_are_aggregated_and_terms_are_forwarded() -> None:
         "Harvard Dataverse",
         "Zenodo",
     }
-    assert dataverse.terms == ["rainfall", "crop", "yield"]
-    assert zenodo.terms == ["rainfall", "crop", "yield"]
+    assert any("rainfall" in query for query in dataverse.queries)
+    assert any("crop" in query for query in dataverse.queries)
+    assert any("yield" in query for query in zenodo.queries)
     assert warnings == []
     assert mode == "gemini"
 
@@ -275,6 +290,7 @@ def test_duplicate_dois_are_removed_before_reranking() -> None:
         FakeUCIRepository(),
         FakeGemini(),
         [FakeProvider("Dataverse", [duplicate_a]), FakeProvider("Zenodo", [duplicate_b])],
+        FakeEmbedding(),
     ).search("Does rainfall affect crop yield?", 8)
 
     assert len(
@@ -291,7 +307,7 @@ def test_one_source_failure_does_not_discard_other_sources() -> None:
     broken = FakeProvider("Harvard Dataverse", [], RuntimeError("timeout"))
 
     _, datasets, warnings, _ = DiscoveryService(
-        FakeUCIRepository(), FakeGemini(), [broken, good]
+        FakeUCIRepository(), FakeGemini(), [broken, good], FakeEmbedding()
     ).search("Does rainfall affect crop yield?", 8)
 
     assert any(dataset.source == "Zenodo" for dataset in datasets)
@@ -303,6 +319,7 @@ def test_empty_external_results_preserve_empty_result_behavior() -> None:
         FakeUCIRepository(),
         FakeGemini(),
         [FakeProvider("Harvard Dataverse", []), FakeProvider("Zenodo", [])],
+        FakeEmbedding(),
     ).search("Does rainfall affect crop yield?", 8)
 
     assert datasets

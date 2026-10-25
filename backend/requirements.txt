@@ -7,3 +7,4 @@ numpy>=1.26,<3
 ucimlrepo>=0.0.7,<1
 httpx>=0.27,<1
 google-genai>=1.0,<2
+sentence-transformers>=3.0,<6

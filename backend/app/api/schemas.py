@@ -187,6 +187,26 @@ class RelevanceAssessmentBatch(BaseModel):
     assessments: list[RelevanceAssessment]
 
 
+class ConceptMatch(BaseModel):
+    """Verified evidence that a dataset matches one interpreted concept."""
+
+    concept_id: str
+    concept_type: Literal[
+        "full_question",
+        "independent_variable",
+        "dependent_variable",
+        "population_or_geography",
+        "research_subject",
+        "synonym",
+        "search_term",
+    ]
+    concept: str
+    matched_terms: list[str] = []
+    matched_fields: list[str] = []
+    evidence: list[str] = []
+    semantic_similarity_score: float | None = Field(default=None, ge=-1, le=1)
+
+
 class DatasetResult(UCIRecord):
     source: str = "UCI Machine Learning Repository"
     data_status: Literal["metadata_only", "available", "failed", "analyzed"]
@@ -195,6 +215,7 @@ class DatasetResult(UCIRecord):
     score_type: Literal["semantic_similarity", "keyword_fallback", "legacy_gemini"] = (
         "legacy_gemini"
     )
+    concept_matches: list[ConceptMatch] = []
     relevance_explanation: str
     score_confidence: Literal["low", "medium", "high"] = "low"
     matched_research_variables: list[str] = []

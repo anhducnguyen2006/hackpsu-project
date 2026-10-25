@@ -13,6 +13,17 @@ class Settings(BaseSettings):
     uci_catalog_ttl_seconds: int = 900
     external_request_timeout_seconds: float = 12.0
     gemini_request_timeout_ms: int = 15000
+    discovery_source_concurrency: int = 3
+    discovery_candidate_limit: int = 12
+    embedding_model_name: str = "BAAI/bge-small-en-v1.5"
+    embedding_model_version: str = "1"
+    embedding_top_k: int = 12
+    dataverse_enabled: bool = True
+    dataverse_api_url: str = "https://dataverse.harvard.edu/api/search"
+    dataverse_results_limit: int = 5
+    zenodo_enabled: bool = True
+    zenodo_api_url: str = "https://zenodo.org/api/records/"
+    zenodo_results_limit: int = 5
     demo_mode: bool = False
 
     model_config = SettingsConfigDict(
