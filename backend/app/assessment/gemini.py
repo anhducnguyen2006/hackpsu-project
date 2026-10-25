@@ -55,6 +55,9 @@ def _ensure_complete_response(response: Any, operation: str) -> None:
 
 
 class GeminiService:
+    # Bump whenever the suitability prompt or its expected interpretation changes.
+    SUITABILITY_PROMPT_VERSION = "suitability-prompt-v1"
+
     def __init__(self, client: Any = None) -> None:
         self._client = client
         self._interpretation_cache: dict[str, tuple[float, ResearchInterpretation]] = {}

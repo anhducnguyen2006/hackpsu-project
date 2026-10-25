@@ -18,11 +18,14 @@ from app.api.schemas import (
 )
 from app.assessment.gemini import GeminiService
 from app.assessment.suitability import calculate_final_score
+from app.config import settings
 from app.discovery.uci import UCIRepositoryError, dataset_record_from_uci
 from app.profiling.profiler import DataProfiler
 from app.analysis.exploratory import ExploratoryAnalyzer
 from app.research.repository import (
+    get_cached_research_assessment,
     get_dataset_profile,
+    save_research_assessment,
     save_dataset_profile,
     upsert_dataset,
 )
@@ -53,7 +56,7 @@ class DatasetAnalysisService:
             self._data_cache[numeric_id] = fetched
             source_record, dataframe, source_metadata = fetched
             source_version = self._source_version(dataframe, source_metadata)
-            profile = self._cached_or_profile(
+            profile, dataset_database_id = self._cached_or_profile(
                 numeric_id,
                 source_record,
                 source_version,
@@ -76,10 +79,14 @@ class DatasetAnalysisService:
         try:
             if interpretation is None:
                 raise RuntimeError("Research question interpretation was unavailable.")
-            assessment = calculate_final_score(
-                self.gemini.assess_suitability(
-                    request.research_question, interpretation, metadata, profile
-                )
+            assessment = self._cached_or_assess(
+                request.research_question,
+                interpretation,
+                metadata,
+                profile,
+                source_version,
+                dataset_database_id,
+                warnings,
             )
         except Exception as error:
             warnings.append(f"AI suitability assessment unavailable: {self._safe(error)}")
@@ -103,7 +110,7 @@ class DatasetAnalysisService:
         interpretation: ResearchInterpretation | None,
         variable_descriptions: dict[str, str],
         warnings: list[str],
-    ) -> DataProfile:
+    ) -> tuple[DataProfile, int | None]:
         dataset_database_id: int | None = None
         cached_profile: dict[str, Any] | None = None
         try:
@@ -129,7 +136,7 @@ class DatasetAnalysisService:
                     "dataset_profile_cache event=hit dataset_id=%s",
                     numeric_id,
                 )
-                return profile
+                return profile, dataset_database_id
             except Exception:
                 logger.warning(
                     "dataset_profile_cache event=invalid dataset_id=%s",
@@ -160,7 +167,104 @@ class DatasetAnalysisService:
                 warnings.append(
                     "Persistent profile cache save failed; computed profile is available."
                 )
-        return profile
+        return profile, dataset_database_id
+
+    def _cached_or_assess(
+        self,
+        research_question: str,
+        interpretation: ResearchInterpretation,
+        dataset: Any,
+        profile: DataProfile,
+        source_version: str,
+        dataset_database_id: int | None,
+        warnings: list[str],
+    ) -> ResearchAssessment:
+        cache_key = self._assessment_cache_key(
+            research_question,
+            interpretation,
+            dataset,
+            profile,
+            source_version,
+        )
+        if dataset_database_id is not None:
+            try:
+                cached = get_cached_research_assessment(cache_key)
+                if cached is not None:
+                    assessment = ResearchAssessment.model_validate(cached)
+                    logger.info(
+                        "gemini_suitability_cache event=hit dataset_id=%s",
+                        dataset.dataset_id,
+                    )
+                    return assessment
+            except Exception:
+                logger.warning(
+                    "gemini_suitability_cache event=read_failed dataset_id=%s",
+                    dataset.dataset_id,
+                )
+                warnings.append(
+                    "Persistent suitability cache unavailable; requested assessment was generated."
+                )
+        logger.info(
+            "gemini_suitability_cache event=miss dataset_id=%s",
+            dataset.dataset_id,
+        )
+        generated = self.gemini.assess_suitability(
+            research_question, interpretation, dataset, profile
+        )
+        assessment = calculate_final_score(ResearchAssessment.model_validate(generated))
+        if dataset_database_id is not None:
+            try:
+                save_research_assessment(
+                    cache_key=cache_key,
+                    dataset_id=dataset_database_id,
+                    model=settings.gemini_model,
+                    assessment_version=GeminiService.SUITABILITY_PROMPT_VERSION,
+                    assessment=assessment,
+                )
+            except Exception:
+                logger.warning(
+                    "gemini_suitability_cache event=save_failed dataset_id=%s",
+                    dataset.dataset_id,
+                )
+                warnings.append(
+                    "Suitability assessment cache save failed; generated assessment is available."
+                )
+        return assessment
+
+    @staticmethod
+    def _assessment_cache_key(
+        research_question: str,
+        interpretation: ResearchInterpretation,
+        dataset: Any,
+        profile: DataProfile,
+        source_version: str,
+    ) -> str:
+        normalized_question = " ".join(research_question.strip().split()).lower()
+        payload = {
+            "normalized_research_question": normalized_question,
+            "interpretation": interpretation.model_dump(mode="json"),
+            "dataset_identity": {
+                "dataset_id": dataset.dataset_id,
+                "repository_url": str(dataset.repository_url),
+            },
+            "dataset_metadata": dataset.model_dump(mode="json"),
+            "source_version": source_version,
+            "profile_version": DataProfiler.PROFILER_VERSION,
+            "profile": profile.model_dump(mode="json"),
+            "assessment_prompt_version": GeminiService.SUITABILITY_PROMPT_VERSION,
+            "gemini_model": settings.gemini_model,
+            "gemini_configuration": {
+                "response_schema": "ResearchAssessment",
+                "response_mime_type": "application/json",
+                "max_output_tokens": 2200,
+                "request_timeout_ms": settings.gemini_request_timeout_ms,
+            },
+        }
+        return hashlib.sha256(
+            json.dumps(payload, sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ).hexdigest()
 
     @staticmethod
     def _source_version(

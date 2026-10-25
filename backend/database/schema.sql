@@ -52,6 +52,7 @@ CREATE TABLE research_assessments (
     profile_id BIGINT REFERENCES dataset_profiles(id),
     model TEXT NOT NULL,
     assessment_version TEXT NOT NULL,
+    cache_key TEXT,
     assessment JSONB NOT NULL,
     suitability_score DOUBLE PRECISION,
     created_at TIMESTAMPTZ DEFAULT NOW()
@@ -62,3 +63,7 @@ ON research_queries(created_at DESC);
 
 CREATE INDEX idx_assessments_query
 ON research_assessments(query_id);
+
+CREATE UNIQUE INDEX uq_assessments_cache_key
+ON research_assessments(cache_key)
+WHERE cache_key IS NOT NULL;

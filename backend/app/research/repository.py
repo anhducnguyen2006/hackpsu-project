@@ -4,7 +4,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from app.api.schemas import DataProfile, DatasetRecord, DatasetResult
+from app.api.schemas import DataProfile, DatasetRecord, DatasetResult, ResearchAssessment
 from database.connection import get_connection
 
 
@@ -304,6 +304,87 @@ def save_dataset_profile(
             ).fetchone()
             if row is None:
                 raise RuntimeError("The dataset profile save returned no database ID")
+            connection.commit()
+            return int(row[0])
+    except Exception:
+        if connection is not None:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+        raise
+
+
+def get_cached_research_assessment(cache_key: str) -> dict[str, Any] | None:
+    """Return a completed assessment stored for one exact input fingerprint."""
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            SELECT assessment
+            FROM research_assessments
+            WHERE cache_key = %s
+              AND assessment IS NOT NULL
+            LIMIT 1
+            """,
+            (cache_key,),
+        ).fetchone()
+        return None if row is None else row[0]
+
+
+def save_research_assessment(
+    *,
+    cache_key: str,
+    dataset_id: int,
+    model: str,
+    assessment_version: str,
+    assessment: ResearchAssessment,
+    query_id: int | None = None,
+    profile_id: int | None = None,
+) -> int:
+    """Save one validated, completed suitability assessment for an exact key."""
+    assessment_payload = ResearchAssessment.model_validate(assessment).model_dump(
+        mode="json"
+    )
+    connection = None
+    try:
+        with get_connection() as connection:
+            row = connection.execute(
+                """
+                INSERT INTO research_assessments
+                    (
+                        query_id,
+                        dataset_id,
+                        profile_id,
+                        model,
+                        assessment_version,
+                        cache_key,
+                        assessment,
+                        suitability_score
+                    )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (cache_key) WHERE cache_key IS NOT NULL
+                DO UPDATE SET
+                    dataset_id = EXCLUDED.dataset_id,
+                    profile_id = EXCLUDED.profile_id,
+                    model = EXCLUDED.model,
+                    assessment_version = EXCLUDED.assessment_version,
+                    assessment = EXCLUDED.assessment,
+                    suitability_score = EXCLUDED.suitability_score
+                RETURNING id
+                """,
+                (
+                    query_id,
+                    dataset_id,
+                    profile_id,
+                    model,
+                    assessment_version,
+                    cache_key,
+                    Jsonb(assessment_payload),
+                    assessment.final_score,
+                ),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError("The research assessment save returned no ID")
             connection.commit()
             return int(row[0])
     except Exception:
