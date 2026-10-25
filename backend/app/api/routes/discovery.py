@@ -1,8 +1,9 @@
 import logging
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 
+from app.api import schemas
 from app.api.schemas import DiscoveryGraphRequest, DiscoveryRequest, DiscoveryResponse, KnowledgeGraphResponse
 from app.assessment.gemini import GeminiService
 from app.config import settings
@@ -23,8 +24,46 @@ service = DiscoveryService(
 )
 
 
+def _persist_discovery_result_background(
+    question: str,
+    normalized_question: str | None,
+    dataset_payloads: list[dict],
+    embedding_service: object | None,
+) -> None:
+    """Best-effort persistence with a fresh repository transaction."""
+    started = time.perf_counter()
+    try:
+        datasets = [
+            schemas.DatasetResult.model_validate(payload)
+            for payload in dataset_payloads
+        ]
+        query_id = persist_discovery_result(
+            question=question,
+            normalized_question=normalized_question,
+            datasets=datasets,
+            embedding_service=embedding_service,
+        )
+        logger.info(
+            "discovery stage=background_persistence elapsed_ms=%.1f query_id=%s datasets=%d",
+            (time.perf_counter() - started) * 1000,
+            query_id,
+            len(datasets),
+        )
+    except Exception as error:
+        # History is useful but not required to answer a live discovery request.
+        # Exception text is deliberately omitted because drivers can echo conninfo.
+        logger.error(
+            "discovery background persistence failed datasets=%d elapsed_ms=%.1f error_type=%s",
+            len(dataset_payloads),
+            (time.perf_counter() - started) * 1000,
+            type(error).__name__,
+        )
+
+
 @router.post("/search", response_model=DiscoveryResponse)
-def search(request: DiscoveryRequest) -> DiscoveryResponse:
+def search(
+    request: DiscoveryRequest, background_tasks: BackgroundTasks
+) -> DiscoveryResponse:
     started = time.perf_counter()
     if settings.demo_mode:
         interpretation, datasets, warnings, processing_mode = demo_search(
@@ -47,22 +86,13 @@ def search(request: DiscoveryRequest) -> DiscoveryResponse:
     ) = service.search_with_status(
         request.research_question, request.limit
     )
-    try:
-        persist_discovery_result(
-            question=request.research_question,
-            normalized_question=(
-                interpretation.refined_question if interpretation else None
-            ),
-            datasets=datasets,
-            embedding_service=getattr(service, "embedding_service", None),
-        )
-    except Exception:
-        logger.warning(
-            "discovery persistence unavailable; returning live discovery response"
-        )
-        warnings.append(
-            "Research history persistence unavailable; discovery results were not saved."
-        )
+    background_tasks.add_task(
+        _persist_discovery_result_background,
+        request.research_question,
+        interpretation.refined_question if interpretation else None,
+        [dataset.model_dump(mode="json") for dataset in datasets],
+        getattr(service, "embedding_service", None),
+    )
     explanation = (
         "Results are ranked using verified repository metadata and local semantic "
         "similarity. Semantic similarity is not research suitability; full suitability "

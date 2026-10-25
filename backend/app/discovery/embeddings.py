@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import threading
+import time
 from collections.abc import Sequence
 from typing import Any
 
@@ -10,6 +12,7 @@ import numpy as np
 from app.api.schemas import DatasetRecord
 from app.config import settings
 
+logger = logging.getLogger(__name__)
 
 class EmbeddingServiceError(RuntimeError):
     """Raised when local semantic ranking cannot be completed."""
@@ -80,9 +83,22 @@ class EmbeddingService:
         if not valid:
             return [{} for _ in query_texts]
         try:
+            query_started = time.perf_counter()
             query_matrix = self._normalize_rows(self._encode(query_texts))
+            query_elapsed = (time.perf_counter() - query_started) * 1000
+            candidate_started = time.perf_counter()
             candidate_matrix = self._candidate_embeddings(valid)
+            candidate_elapsed = (time.perf_counter() - candidate_started) * 1000
+            similarity_started = time.perf_counter()
             scores = np.clip(query_matrix @ candidate_matrix.T, -1.0, 1.0)
+            logger.info(
+                "discovery stage=vector_similarity queries=%d candidates=%d query_embedding_ms=%.1f candidate_embedding_ms=%.1f cosine_ms=%.1f",
+                len(query_texts),
+                len(valid),
+                query_elapsed,
+                candidate_elapsed,
+                (time.perf_counter() - similarity_started) * 1000,
+            )
             return [
                 {candidate.id: float(score) for (candidate, _), score in zip(valid, row)}
                 for row in scores

@@ -1,3 +1,5 @@
+import time
+
 from fastapi.testclient import TestClient
 
 from app.api import schemas
@@ -40,6 +42,18 @@ class FakeDiscoveryService:
 
     def search_with_status(self, question: str, limit: int):
         return _interpretation(), self.datasets[:limit], [], "gemini", "semantic_embeddings"
+
+
+class RecordingBackgroundTasks:
+    def __init__(self) -> None:
+        self.tasks = []
+
+    def add_task(self, function, *args, **kwargs) -> None:
+        self.tasks.append((function, args, kwargs))
+
+    def run_all(self) -> None:
+        for function, args, kwargs in self.tasks:
+            function(*args, **kwargs)
 
 
 def test_successful_discovery_persists_original_normalized_question_and_results(monkeypatch) -> None:
@@ -118,7 +132,53 @@ def test_database_failure_does_not_fail_discovery_response(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["datasets"][0]["dataset_id"] == "uci:320"
-    assert any("persistence unavailable" in warning for warning in response.json()["warnings"])
+    assert response.json()["warnings"] == []
+
+
+def test_discovery_response_does_not_wait_for_slow_background_write(monkeypatch) -> None:
+    monkeypatch.setattr(discovery_route.settings, "demo_mode", False)
+    monkeypatch.setattr(discovery_route, "service", FakeDiscoveryService([_dataset()]))
+    persisted: list[str] = []
+
+    def slow_persistence(**kwargs):
+        time.sleep(0.15)
+        persisted.append(kwargs["question"])
+
+    monkeypatch.setattr(discovery_route, "persist_discovery_result", slow_persistence)
+    tasks = RecordingBackgroundTasks()
+    started = time.perf_counter()
+
+    response = discovery_route.search(
+        schemas.DiscoveryRequest(
+            research_question="How does study time relate to grades?", limit=8
+        ),
+        tasks,
+    )
+
+    response_elapsed = time.perf_counter() - started
+    assert response.datasets[0].source_id == "320"
+    assert response_elapsed < 0.10
+    assert persisted == []
+    tasks.run_all()
+    assert persisted == ["How does study time relate to grades?"]
+
+
+def test_background_persistence_failure_is_logged_and_does_not_raise(monkeypatch, caplog) -> None:
+    monkeypatch.setattr(
+        discovery_route,
+        "persist_discovery_result",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("secret database url")),
+    )
+
+    discovery_route._persist_discovery_result_background(
+        "Question",
+        "normalized question",
+        [_dataset().model_dump(mode="json")],
+        None,
+    )
+
+    assert "background persistence failed" in caplog.text
+    assert "secret database url" not in caplog.text
 
 
 def test_demo_discovery_does_not_persist_cached_datasets(monkeypatch) -> None:

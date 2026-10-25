@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import time
 from typing import Any
 
 import numpy as np
@@ -8,6 +10,7 @@ from psycopg.types.json import Jsonb
 from app.api.schemas import DataProfile, DatasetRecord, DatasetResult, ResearchAssessment
 from database.connection import get_connection
 
+logger = logging.getLogger(__name__)
 
 ResearchQuery = dict[str, Any]
 
@@ -318,12 +321,25 @@ def persist_discovery_result(
 ) -> int:
     """Atomically persist a live discovery query, datasets, and relationships."""
     connection = None
+    started = time.perf_counter()
+    embedding_started = time.perf_counter()
     try:
-        with get_connection() as connection:
+        connection_started = time.perf_counter()
+        connection_context = get_connection()
+        with connection_context as connection:
+            logger.info(
+                "discovery persistence stage=connection_acquisition elapsed_ms=%.1f",
+                (time.perf_counter() - connection_started) * 1000,
+            )
             stored_normalized_question = normalized_question or question
             embedding, embedding_model = _question_embedding(
                 stored_normalized_question, embedding_service
             )
+            logger.info(
+                "discovery persistence stage=embedding elapsed_ms=%.1f",
+                (time.perf_counter() - embedding_started) * 1000,
+            )
+            query_started = time.perf_counter()
             if embedding is None:
                 query_row = connection.execute(
                     """
@@ -343,20 +359,33 @@ def persist_discovery_result(
                     """,
                     (question, stored_normalized_question, embedding, embedding_model),
                 ).fetchone()
+            logger.info(
+                "discovery persistence stage=research_question_insert elapsed_ms=%.1f",
+                (time.perf_counter() - query_started) * 1000,
+            )
             if query_row is None:
                 raise RuntimeError("The discovery query insert returned no ID")
             query_id = int(query_row[0])
 
+            upsert_started = time.perf_counter()
+            relationship_started = time.perf_counter()
             for rank, result in enumerate(datasets, start=1):
+                item_started = time.perf_counter()
                 dataset_row = _upsert_dataset_with_connection(connection, result)
                 if dataset_row is None:
                     raise RuntimeError("The dataset upsert returned no database ID")
+                logger.info(
+                    "discovery persistence stage=dataset_metadata_upsert elapsed_ms=%.1f dataset=%s",
+                    (time.perf_counter() - item_started) * 1000,
+                    result.source_id,
+                )
                 dataset_id = int(dataset_row[0])
                 relevance_score = (
                     result.preliminary_relevance_score
                     if result.preliminary_relevance_score is not None
                     else result.semantic_similarity_score
                 )
+                relationship_item_started = time.perf_counter()
                 _save_query_dataset_match_with_connection(
                     connection,
                     query_id,
@@ -365,7 +394,25 @@ def persist_discovery_result(
                     relevance_score,
                     result.relevance_explanation,
                 )
+                logger.info(
+                    "discovery persistence stage=relationship_insert elapsed_ms=%.1f dataset=%s",
+                    (time.perf_counter() - relationship_item_started) * 1000,
+                    result.source_id,
+                )
+            logger.info(
+                "discovery persistence stage=dataset_upserts_total elapsed_ms=%.1f count=%d",
+                (time.perf_counter() - upsert_started) * 1000,
+                len(datasets),
+            )
             connection.commit()
+            logger.info(
+                "discovery persistence stage=transaction_commit elapsed_ms=%.1f",
+                (time.perf_counter() - relationship_started) * 1000,
+            )
+            logger.info(
+                "discovery persistence stage=total elapsed_ms=%.1f",
+                (time.perf_counter() - started) * 1000,
+            )
             return query_id
     except Exception:
         if connection is not None:
