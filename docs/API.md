@@ -81,6 +81,57 @@ Errors include `422` for invalid request validation. Repository failure is retur
 
 With `DEMO_MODE=true`, this route returns cached verified metadata for UCI #320 and #856 for education-related questions. It does not perform a live UCI search or claim live Gemini generation. Unmatched questions return no cached records.
 
+## `GET /research/graph`
+
+Returns the saved research-question knowledge graph from persisted
+`research_connections` edges. The default `limit` is 100 edges, with a maximum
+of 500. Use `research_id` to return only that question's neighborhood. This
+route is read-only: it does not generate embeddings, call Gemini, or create
+edges.
+
+Example:
+
+```text
+GET /api/v1/research/graph?limit=100&research_id=7
+```
+
+Response shape:
+
+```json
+{
+  "nodes": [{
+    "data": {
+      "id": "research:7",
+      "research_id": 7,
+      "type": "RESEARCH_QUESTION",
+      "label": "Does rainfall affect yield?",
+      "question": "Does rainfall affect yield?",
+      "created_at": "2026-10-25T12:00:00Z"
+    }
+  }],
+  "edges": [{
+    "data": {
+      "id": "research-connection:8",
+      "source": "research:7",
+      "target": "research:12",
+      "relationship_type": "SHARED_DATASET",
+      "similarity_score": null,
+      "shared_dataset_count": 2,
+      "shared_datasets": [{
+        "dataset_id": 41,
+        "title": "Rainfall observations",
+        "repository": "UCI",
+        "external_id": "320"
+      }],
+      "evidence": "2 shared discovered dataset(s): Rainfall observations",
+      "created_at": "2026-10-25T12:01:00Z"
+    }
+  }]
+}
+```
+
+Graphs with no persisted connections return `{"nodes": [], "edges": []}`.
+
 ## `POST /datasets/{dataset_id}/analyze`
 
 Analyzes a verified UCI dataset. `dataset_id` must use `uci:<positive integer>`.
