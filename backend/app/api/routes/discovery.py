@@ -12,6 +12,8 @@ from app.discovery.embeddings import EmbeddingService
 from app.discovery.search import DiscoveryService, build_external_providers
 from app.discovery.uci import UCIRepositoryService
 from app.research.repository import persist_discovery_result
+from app.research.semantic_connections import generate_semantic_connections
+from app.research.shared_dataset_connections import generate_shared_dataset_connections
 
 router = APIRouter(prefix="/discovery", tags=["discovery"])
 logger = logging.getLogger(__name__)
@@ -49,6 +51,7 @@ def _persist_discovery_result_background(
             query_id,
             len(datasets),
         )
+        _update_research_connections_background(query_id)
     except Exception as error:
         # History is useful but not required to answer a live discovery request.
         # Exception text is deliberately omitted because drivers can echo conninfo.
@@ -58,6 +61,32 @@ def _persist_discovery_result_background(
             (time.perf_counter() - started) * 1000,
             type(error).__name__,
         )
+
+
+def _update_research_connections_background(query_id: int) -> None:
+    """Best-effort, bounded graph updates after persistence commits."""
+    started = time.perf_counter()
+    for connection_type, generator in (
+        ("semantic_similarity", generate_semantic_connections),
+        ("shared_dataset", generate_shared_dataset_connections),
+    ):
+        try:
+            result = generator(research_id=query_id)
+            logger.info(
+                "research_connections background task=generate type=%s query_id=%s elapsed_ms=%.1f generated=%s",
+                connection_type,
+                query_id,
+                (time.perf_counter() - started) * 1000,
+                getattr(result, "connections_generated", 0),
+            )
+        except Exception as error:
+            logger.error(
+                "research_connections background task failed type=%s query_id=%s elapsed_ms=%.1f error_type=%s",
+                connection_type,
+                query_id,
+                (time.perf_counter() - started) * 1000,
+                type(error).__name__,
+            )
 
 
 @router.post("/search", response_model=DiscoveryResponse)
