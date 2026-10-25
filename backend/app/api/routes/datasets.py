@@ -3,8 +3,12 @@ from fastapi import APIRouter, HTTPException
 from app.api.schemas import (
     AnalysisRequest,
     DatasetAnalysisResponse,
+    DatasetResourceListing,
+    DatasetResourceRequest,
     ExploreRequest,
     ExploratoryAnalysisResponse,
+    SourceAnalysisRequest,
+    SourceDatasetAnalysisResponse,
 )
 from app.analysis.service import DatasetAnalysisService
 from app.assessment.gemini import GeminiService
@@ -27,6 +31,30 @@ def dataset_test() -> dict:
 
 
 analysis_router = APIRouter(prefix="/datasets", tags=["datasets"])
+
+
+@analysis_router.post("/resources", response_model=DatasetResourceListing)
+def list_dataset_resources(
+    request: DatasetResourceRequest,
+) -> DatasetResourceListing:
+    try:
+        return analysis_service.list_resources(request.dataset_id)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502, detail="Dataset resource lookup failed.") from error
+
+
+@analysis_router.post("/analyze", response_model=SourceDatasetAnalysisResponse)
+def analyze_source_dataset(
+    request: SourceAnalysisRequest,
+) -> SourceDatasetAnalysisResponse:
+    try:
+        return analysis_service.analyze_source(request)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=502, detail="Dataset file analysis failed.") from error
 
 
 @analysis_router.post("/{dataset_id}/analyze", response_model=DatasetAnalysisResponse)

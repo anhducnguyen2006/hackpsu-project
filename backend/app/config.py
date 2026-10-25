@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     backend_cors_origins: str = "http://localhost:5173"
     uci_catalog_ttl_seconds: int = 900
     external_request_timeout_seconds: float = 12.0
+    analysis_max_download_bytes: int = 50_000_000
+    analysis_max_rows: int = 100_000
+    analysis_max_columns: int = 500
+    analysis_max_redirects: int = 3
+    analysis_download_concurrency: int = 2
     gemini_request_timeout_ms: int = 15000
     demo_mode: bool = False
 

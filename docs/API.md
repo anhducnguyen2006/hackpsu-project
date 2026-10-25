@@ -108,6 +108,36 @@ Errors:
 
 If data retrieval fails, verified metadata is preserved as `metadata_only`. If Gemini fails, the deterministic profile is preserved and the AI assessment is unavailable.
 
+## `POST /datasets/resources`
+
+Resolves public, provider-verified CSV/TSV resources for a Dataverse or Zenodo dataset. It does not download the file.
+
+Request:
+
+```json
+{"dataset_id": "zenodo:12345"}
+```
+
+The response contains the normalized `DatasetRecord`, selectable `resources`, a status such as `compatible_tabular_file_available` or `unsupported`, and warnings. Resource IDs are stable provider-scoped identifiers such as `dataverse:file:42` or `zenodo:file:12345:data.csv`. Restricted files, archives, PDFs, notebooks, executables, and other unsupported resources are not returned.
+
+## `POST /datasets/analyze`
+
+Analyzes one explicitly selected public CSV/TSV resource from Harvard Dataverse or Zenodo using the same deterministic profiler and optional Gemini suitability pipeline as UCI analysis.
+
+Request:
+
+```json
+{
+  "dataset_id": "zenodo:12345",
+  "resource_id": "zenodo:file:12345:data.csv",
+  "research_question": "Does rainfall relate to crop yield?"
+}
+```
+
+The response includes source-neutral dataset provenance, selected filename/format/size/checksum/version/source URL, `data_status`, deterministic `profile`, optional `assessment`, AI status, and sanitized warnings. Downloads are restricted to approved HTTPS provider hosts, bounded to `ANALYSIS_MAX_DOWNLOAD_BYTES`, streamed with a redirect limit, and parsed only as CSV/TSV. The default limits are 50 MB, 100,000 rows, and 500 columns. No arbitrary URL download endpoint exists.
+
+Invalid provider/resource IDs return `400`; provider or retrieval failures return `502`. Existing UCI analysis remains at `POST /datasets/{dataset_id}/analyze`.
+
 ## `POST /datasets/{dataset_id}/explore`
 
 Computes grouped descriptive statistics for a verified independent variable and numeric outcome.

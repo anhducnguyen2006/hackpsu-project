@@ -33,6 +33,145 @@ class UCIRecord(BaseModel):
     data_available: bool | None = None
 
 
+class DownloadResource(BaseModel):
+    """A verified downloadable resource published by a dataset repository."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: HttpUrl
+    format: str
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def normalize_url(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("format")
+    @classmethod
+    def normalize_format(cls, value: str) -> str:
+        normalized = value.strip().lower().lstrip(".")
+        if not normalized:
+            raise ValueError("format must not be empty")
+        return normalized
+
+
+class DatasetVariable(BaseModel):
+    """Verified metadata for one published dataset variable."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    description: str | None = None
+    data_type: str | None = None
+    unit: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("variable name must not be empty")
+        return normalized
+
+    @field_validator("description", "data_type", "unit", mode="before")
+    @classmethod
+    def normalize_optional_text(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
+        return value
+
+
+class DatasetRecord(BaseModel):
+    """Repository-neutral, provenance-preserving scientific dataset metadata."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    source: str
+    source_id: str
+    title: str
+    description: str | None = None
+    landing_page_url: HttpUrl | None = None
+    download_resources: list[DownloadResource] = Field(default_factory=list)
+    variables: list[DatasetVariable] = Field(default_factory=list)
+    subjects: list[str] = Field(default_factory=list)
+    geographic_coverage: list[str] = Field(default_factory=list)
+    temporal_coverage: list[str] = Field(default_factory=list)
+    doi: str | None = None
+    license: str | None = None
+    data_available: bool | None = None
+
+    @field_validator("id")
+    @classmethod
+    def validate_stable_id(cls, value: str) -> str:
+        normalized = value.strip()
+        if ":" in normalized:
+            prefix, suffix = normalized.split(":", 1)
+            normalized = f"{prefix.lower()}:{suffix}"
+        if not re.fullmatch(r"[a-z0-9][a-z0-9._-]*:[^\s]+", normalized):
+            raise ValueError(
+                "id must be a stable source-prefixed identifier such as 'uci:320'"
+            )
+        return normalized
+
+    @field_validator("source", "title")
+    @classmethod
+    def normalize_required_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("metadata text must not be empty")
+        return normalized
+
+    @field_validator("source_id")
+    @classmethod
+    def normalize_source_id(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized or re.search(r"\s", normalized):
+            raise ValueError(
+                "source_id must be a non-empty identifier without spaces"
+            )
+        return normalized
+
+    @field_validator(
+        "description", "doi", "license", "landing_page_url", mode="before"
+    )
+    @classmethod
+    def normalize_optional_metadata(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
+        return value
+
+    @field_validator(
+        "subjects", "geographic_coverage", "temporal_coverage", mode="before"
+    )
+    @classmethod
+    def normalize_text_lists(cls, value: object) -> object:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            return value
+        normalized: list[str] = []
+        for item in value:
+            if not isinstance(item, str):
+                normalized.append(item)
+                continue
+            item = item.strip()
+            if item and item not in normalized:
+                normalized.append(item)
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_source_id_suffix(self) -> "DatasetRecord":
+        _, id_suffix = self.id.split(":", 1)
+        if id_suffix != self.source_id:
+            raise ValueError("id suffix must match source_id")
+        return self
+
+
 class RelevanceAssessment(BaseModel):
     dataset_id: str
     preliminary_relevance_score: int | None = Field(default=None, ge=0, le=100)
@@ -171,6 +310,29 @@ class DatasetAnalysisResponse(BaseModel):
     assessment: ResearchAssessment | None = None
     ai_assessment_status: Literal["available", "unavailable"] = "unavailable"
     warnings: list[str] = []
+
+
+class SourceAnalysisRequest(BaseModel):
+    dataset_id: str = Field(min_length=3, max_length=500)
+    resource_id: str = Field(min_length=1, max_length=500)
+    research_question: str = Field(min_length=10, max_length=2000)
+
+
+class SourceDatasetAnalysisResponse(BaseModel):
+    dataset: DatasetRecord
+    resource: DatasetResource
+    data_status: Literal[
+        "metadata_only",
+        "file_accessible",
+        "downloaded",
+        "parsed",
+        "analyzed",
+        "failed",
+    ]
+    profile: DataProfile | None = None
+    assessment: ResearchAssessment | None = None
+    ai_assessment_status: Literal["available", "unavailable"] = "unavailable"
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ExploreRequest(BaseModel):

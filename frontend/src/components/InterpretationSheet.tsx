@@ -6,6 +6,7 @@ export function InterpretationSheet({ interpretation, processingMode }: { interp
     ["Subject", interpretation.research_subject], ["Independent variable", interpretation.independent_variables.join(", ")],
     ["Outcome", interpretation.dependent_variables.join(", ")], ["Population", interpretation.target_population ?? "Not specified"],
   ];
+  const assumptionsOrAmbiguities = interpretation.assumptions_or_ambiguities ?? [];
   return <section className="workspace-grid interpretation-page" aria-labelledby="interpretation-title">
     <div className="workspace-content"><p className="eyebrow">Research instrument / 02 — Interpretation</p><h1 id="interpretation-title">Interpretation</h1>
       <p className="section-deck">The example question has been parsed into concepts for dataset discovery. These terms are interpretations, not verified dataset columns.</p>
@@ -13,6 +14,6 @@ export function InterpretationSheet({ interpretation, processingMode }: { interp
       <div className="interpretation-sheet">{fields.map(([name, value], index) => <div className="interpretation-cell" key={name}><span className="data-label">0{index + 1} / {name}</span><strong>{value}</strong></div>)}</div>
       <div className="interpretation-source"><span className="data-label">Original question</span><blockquote>{interpretation.original_research_question}</blockquote></div>
     </div>
-    <aside className="context-rail"><p className="eyebrow">Search method</p><h2>Terms &amp; scope</h2><div className="rail-block"><span className="data-label">Synonym</span><p>{interpretation.synonyms.join(", ")}</p></div><div className="rail-block"><span className="data-label">Search terms</span><ol>{interpretation.search_terms.map((term) => <li key={term}>{term}</li>)}</ol></div><p className="rail-note">These terms guide the cached example. Verify variables against each source record before analysis.</p></aside>
+      <aside className="context-rail"><p className="eyebrow">Search method</p><h2>Terms &amp; scope</h2><div className="rail-block"><span className="data-label">Synonym</span><p>{interpretation.synonyms.join(", ") || "Not specified"}</p></div><div className="rail-block"><span className="data-label">Geographic scope</span><p>{interpretation.geographic_scope ?? "Not specified"}</p></div><div className="rail-block"><span className="data-label">Temporal scope</span><p>{interpretation.temporal_scope ?? "Not specified"}</p></div><div className="rail-block"><span className="data-label">Search terms</span><ol>{interpretation.search_terms.map((term) => <li key={term}>{term}</li>)}</ol></div>{interpretation.assumptions_or_ambiguities.length > 0 && <div className="rail-block"><span className="data-label">Ambiguities</span><p>{interpretation.assumptions_or_ambiguities.join(" ")}</p></div>}<p className="rail-note">These terms guide repository discovery. Verify variables against each source record before analysis.</p></aside>
   </section>;
 }
