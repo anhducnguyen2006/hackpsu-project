@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useRef, useState } from "react";
 import { ResearchQuestion } from "./components/ResearchQuestion";
 import { EXAMPLE_QUESTION } from "./demo/researchExample";
@@ -24,7 +25,7 @@ function getApiBase(): string | undefined {
   return import.meta.env.MODE === "test" ? undefined : "http://localhost:8000";
 }
 
-function App() {
+function App({ authControls }: { authControls?: ReactNode }) {
   const [stage, setStage] = useState<PreviewStage>("question");
   const [discovery, setDiscovery] = useState<DiscoveryResponse | null>(null);
   const [activeQuestion, setActiveQuestion] = useState(EXAMPLE_QUESTION);
@@ -84,7 +85,7 @@ function App() {
   const graphAnalysis = analysisMode === "live" ? analysis : EXAMPLE_ANALYSIS;
   return <div className="site-shell">
     <header className="site-header">
-      <div className="brand-row"><span className="brand">DataOPedia</span><span className="preview-label">{analysisMode === "live" ? "Live repository search" : "Static preview · cached UCI example"}</span></div>
+      <div className="brand-row"><span className="brand">DataOPedia</span><span className="preview-label">{analysisMode === "live" ? "Live repository search" : "Static preview · cached UCI example"}</span>{authControls}</div>
       <nav aria-label="Preview stages" className="stage-nav">
         {stages.map(({ key, label }, index) => <button type="button" key={key} aria-current={stage === key ? "page" : undefined} onClick={() => setStage(key)}><span className="nav-index" aria-hidden="true">0{index + 1}</span>{label}</button>)}
       </nav>
