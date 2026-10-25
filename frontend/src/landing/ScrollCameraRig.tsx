@@ -12,7 +12,7 @@ import { appendStorySequence } from "./storySequence";
 import { exitDisplacement } from "./collageModel";
 import { createLandingNavigation } from "./landingNavigation";
 import { chromeInk } from "./navigationState";
-import { PALETTE } from "./palette";
+import { observeThemeColors } from "../theme/theme";
 import type { WorldHandles } from "./worldHandles";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
@@ -24,10 +24,11 @@ export default function ScrollCameraRig({ handles, root }: { handles: WorldHandl
     const element = root.current;
     if (!element || !(camera instanceof PerspectiveCamera)) return;
     const view = arrivalCamera(size.width, size.height);
-    const state = { progress: 0, settle: 0, worldVisibility: 1, darkness: 0, statement: 0 };
+    const state = { progress: 0, settle: 0, worldVisibility: 1, darkness: 0, statement: 0, evidence: 0 };
     const navigation = createLandingNavigation(element);
     const originalInk = element.style.getPropertyValue("--landing-chrome-ink");
-    let previousInk = "";
+    let themeColors = getComputedStyle(document.documentElement);
+    const originalBackground = element.style.backgroundColor;
     const exit = journey.sample(1);
     const beforeExit = journey.sample(0.999);
     const exitVelocity = exit.position.clone().sub(beforeExit.position).multiplyScalar(1000);
@@ -35,8 +36,12 @@ export default function ScrollCameraRig({ handles, root }: { handles: WorldHandl
     const position = new Vector3();
     const target = new Vector3();
     const apply = () => {
-      const ink = state.statement > 0.5 ? PALETTE.aubergine : chromeInk(state.darkness);
-      if (ink !== previousInk) { element.style.setProperty("--landing-chrome-ink", ink); previousInk = ink; }
+      const color = (name: string) => themeColors.getPropertyValue(`--color-${name}`).trim();
+      const palette = { ice: color('bg'), aubergine: color('heading'), paper: color('inverse-text') };
+      const ink = state.statement > 0.5 ? color('on-accent') : chromeInk(state.darkness, palette, color('inverse-bg'));
+      element.style.setProperty('--landing-chrome-ink', ink);
+      const background = gsap.utils.interpolate(palette.ice, color('inverse-bg'), state.darkness);
+      element.style.backgroundColor = gsap.utils.interpolate(background, color('cinema-bg'), state.evidence);
       const pose = journey.sample(state.progress, position, target);
       if (state.settle > 0) {
         pose.position.addScaledVector(exitVelocity, exitDisplacement(state.settle));
@@ -73,12 +78,15 @@ export default function ScrollCameraRig({ handles, root }: { handles: WorldHandl
       .to(element, { "--landing-reading-opacity": "100%", duration: 0.16 * F }, 0.74 * F);
     appendStorySequence(timeline, state);
     appendCollageSequence(timeline, element, state);
+    const stopColors = observeThemeColors(style => { themeColors = style; apply(); });
     apply();
     // The trigger is created only once WebGL is ready and the native runway is in layout.
     timeline.scrollTrigger?.refresh();
     timeline.progress(timeline.scrollTrigger?.progress ?? 0);
     apply();
     return () => {
+      stopColors();
+      element.style.backgroundColor = originalBackground;
       navigation.dispose();
       if (originalInk) element.style.setProperty("--landing-chrome-ink", originalInk);
       else element.style.removeProperty("--landing-chrome-ink");

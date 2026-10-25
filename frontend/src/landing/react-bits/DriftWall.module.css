@@ -4,9 +4,9 @@
 .column { position: relative; flex: none; width: calc(var(--dw-tile-w) + var(--dw-gap)); transform-style: preserve-3d; }
 .track { display: flex; flex-direction: column; transform-style: preserve-3d; will-change: transform; }
 .tile { position: relative; display: block; flex: none; width: 100%; height: calc(var(--dw-tile-h) + var(--dw-gap)); cursor: pointer; outline: none !important; transform-style: preserve-3d; }
-.inner { pointer-events: none; position: absolute; inset: calc(var(--dw-gap) / 2); display: block; overflow: hidden; background: #0b0b12; border-radius: var(--dw-radius); opacity: var(--dw-dim); transform: translateZ(0); transition: transform 420ms cubic-bezier(.22,1,.36,1), opacity 420ms cubic-bezier(.22,1,.36,1), box-shadow 420ms cubic-bezier(.22,1,.36,1); }
-.tile:global(.is-active) .inner, .tile:focus-visible .inner { opacity: 1; transform: translateZ(var(--dw-lift)); box-shadow: 0 24px 60px -18px rgb(0 0 0 / .7); }
-.tile:focus-visible .inner { box-shadow: 0 24px 60px -18px rgb(0 0 0 / .7), 0 0 0 2px rgb(255 255 255 / .9); }
+.inner { pointer-events: none; position: absolute; inset: calc(var(--dw-gap) / 2); display: block; overflow: hidden; background: var(--color-media-placeholder); border-radius: var(--dw-radius); opacity: var(--dw-dim); transform: translateZ(0); transition: transform 420ms cubic-bezier(.22,1,.36,1), opacity 420ms cubic-bezier(.22,1,.36,1), box-shadow 420ms cubic-bezier(.22,1,.36,1); }
+.tile:global(.is-active) .inner, .tile:focus-visible .inner { opacity: 1; transform: translateZ(var(--dw-lift)); box-shadow: 0 24px 60px -18px var(--color-media-scrim); }
+.tile:focus-visible .inner { box-shadow: 0 24px 60px -18px var(--color-media-scrim), 0 0 0 2px var(--color-media-text); }
 .image { display: block; height: 100%; width: 100%; user-select: none; object-fit: cover; filter: grayscale(var(--dw-gray)) saturate(.92); transition: filter 420ms cubic-bezier(.22,1,.36,1); }
 .tile:global(.is-active) .image, .tile:focus-visible .image { filter: grayscale(0) saturate(1.05); }
 .overlay { pointer-events: none; position: absolute; inset: 0; background: var(--dw-overlay); opacity: .42; transition: opacity 420ms cubic-bezier(.22,1,.36,1); }

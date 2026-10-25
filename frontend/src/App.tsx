@@ -1,5 +1,6 @@
+import { ThemeToggle } from "./components/ThemeToggle";
 import type { ReactNode } from "react";
-import { useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { ResearchQuestion } from "./components/ResearchQuestion";
 import { EXAMPLE_QUESTION } from "./demo/researchExample";
 import { EXAMPLE_INTERPRETATION } from "./demo/researchExample";
@@ -7,7 +8,8 @@ import { InterpretationSheet } from "./components/InterpretationSheet";
 import { DatasetLedger } from "./components/DatasetLedger";
 import { EXAMPLE_DATASETS } from "./demo/researchExample";
 import { EXAMPLE_ANALYSIS } from "./demo/researchExample";
-import { DatasetGraph } from "./components/DatasetGraph";
+import { newSession } from "./graph/graphSession";
+const DatasetGraph = lazy(() => import("./components/DatasetGraph").then(m => ({default:m.DatasetGraph})));
 import { AnalysisView } from "./components/AnalysisView";
 import { EXAMPLE_EXPLORATION } from "./demo/researchExample";
 import { PastResearch } from "./components/PastResearch";
@@ -42,17 +44,22 @@ function App({ authControls }: { authControls?: ReactNode }) {
   const [graphError, setGraphError] = useState("");
   const [selectedQueryId, setSelectedQueryId] = useState<number | null>(null);
   const requestSequence = useRef(0);
-  const analysisSequence = useRef(0);
   const searchController = useRef<AbortController | null>(null);
   const analysisController = useRef<AbortController | null>(null);
+  const analysisSequence = useRef(0);
+  const graphSequence = useRef(0);
+  const graphSession = useRef(newSession());
+  const navigationSequence = useRef(0);
+  function navigate(next: PreviewStage) { navigationSequence.current++; setStage(next); }
+  useEffect(() => () => { searchController.current?.abort(); analysisController.current?.abort(); }, []);
   const apiBase = getApiBase();
   const liveSearchEnabled = Boolean(apiBase);
   function openResearch(queryId: number) {
     setSelectedQueryId(queryId);
-    setStage("history");
+    navigate("history");
   }
   function openConnections() {
-    setStage("connections");
+    navigate("connections");
   }
   async function search(question: string) {
     if (!apiBase) throw new Error("Live search is not configured for this frontend.");
@@ -60,6 +67,11 @@ function App({ authControls }: { authControls?: ReactNode }) {
     const controller = new AbortController();
     searchController.current = controller;
     const sequence = ++requestSequence.current;
+    analysisController.current?.abort();
+    analysisSequence.current++;
+    setAnalysisLoading(false);
+    graphSession.current = newSession();
+    const navigationAtStart = navigationSequence.current;
     setDiscovery(null);
     setActiveQuestion(question);
     setAnalysisMode("live");
@@ -75,36 +87,37 @@ function App({ authControls }: { authControls?: ReactNode }) {
       const payload = await response.json() as DiscoveryResponse;
       if (sequence !== requestSequence.current) return;
       setDiscovery(payload);
-      try {
-        const graphResponse = await fetch(`${apiBase}/api/v1/discovery/graph`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ research_question: question, limit: 12 }), signal: controller.signal });
-        if (!graphResponse.ok) throw new Error("The dataset graph could not be loaded for this search.");
-        if (sequence === requestSequence.current) setGraph(await graphResponse.json() as DatasetGraphResponse);
-      } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        if (sequence === requestSequence.current) setGraphError(error instanceof Error ? error.message : "The dataset graph could not be loaded.");
-      } finally {
-        if (sequence === requestSequence.current) setGraphLoading(false);
-      }
-      setStage("interpretation");
+      if (navigationAtStart === navigationSequence.current) setStage("interpretation");
+      await loadGraph(question, sequence, controller.signal);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
+      if (sequence === requestSequence.current) setGraphLoading(false);
       throw error;
     }
   }
-  async function openAnalysis(datasetId: string) {
-    if (analysisMode === "preview") { setStage("analysis"); return; }
-    if (!datasetId.startsWith("uci:")) return;
+  async function loadGraph(question: string, generation: number, signal?: AbortSignal) {
     if (!apiBase) return;
-    analysisController.current?.abort();
-    const controller = new AbortController();
-    analysisController.current = controller;
-    const sequence = ++analysisSequence.current;
-    setAnalysisLoading(true);
-    setAnalysisError("");
-    setAnalysis(null);
-    setExploration(undefined);
+    const revision = ++graphSequence.current;
+    setGraphLoading(true); setGraphError("");
     try {
-      const response = await fetch(`${apiBase}/api/v1/datasets/${encodeURIComponent(datasetId)}/analyze`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ research_question: activeQuestion }), signal: controller.signal });
+      const response = await fetch(`${apiBase}/api/v1/discovery/graph`, {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({research_question:question,limit:12}), signal});
+      if (!response.ok) throw new Error("The dataset graph could not be loaded for this search.");
+      const payload = await response.json() as DatasetGraphResponse;
+      if (generation === requestSequence.current && revision === graphSequence.current) setGraph(payload);
+    } catch (error) {
+      if (signal?.aborted) return;
+      if (generation === requestSequence.current && revision === graphSequence.current) setGraphError(error instanceof Error ? error.message : "Relationships unavailable.");
+    } finally { if (generation === requestSequence.current && revision === graphSequence.current) setGraphLoading(false); }
+  }
+  async function openAnalysis(datasetId: string) {
+    if (analysisMode === "preview") { if (datasetId === "uci:320") navigate("analysis"); return; }
+    if (!datasetId.startsWith("uci:") || !apiBase || !discovery?.datasets.some(d=>d.dataset_id===datasetId)) return;
+    analysisController.current?.abort();
+    const controller = new AbortController(); analysisController.current = controller;
+    const generation = requestSequence.current, request = ++analysisSequence.current, navigation = navigationSequence.current;
+    setAnalysisLoading(true); setAnalysisError("");
+    try {
+      const response = await fetch(`${apiBase}/api/v1/datasets/${encodeURIComponent(datasetId)}/analyze`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({research_question:activeQuestion}),signal:controller.signal});
       if (!response.ok) {
         let detail = "UCI analysis is unavailable for this dataset right now.";
         try {
@@ -115,28 +128,25 @@ function App({ authControls }: { authControls?: ReactNode }) {
         }
         throw new Error(detail);
       }
-      if (sequence !== analysisSequence.current) return;
-      setAnalysis(await response.json() as DatasetAnalysisResponse);
-      setStage("analysis");
+      const payload = await response.json() as DatasetAnalysisResponse;
+      if (generation !== requestSequence.current || request !== analysisSequence.current || payload.dataset.dataset_id !== datasetId) return;
+      setAnalysis(payload); setExploration(undefined);
+      if (navigation === navigationSequence.current) setStage("analysis");
     } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") return;
-      if (sequence !== analysisSequence.current) return;
-      setAnalysisError(error instanceof Error ? error.message : "UCI analysis failed. Please try again.");
-    } finally {
-      if (sequence === analysisSequence.current) setAnalysisLoading(false);
-    }
+      if (!controller.signal.aborted && generation === requestSequence.current && request === analysisSequence.current) setAnalysisError(error instanceof Error ? error.message : "UCI analysis failed. Please try again.");
+    } finally { if (generation === requestSequence.current && request === analysisSequence.current) setAnalysisLoading(false); }
   }
   const liveInterpretation = analysisMode === "live" ? discovery?.interpretation ?? null : EXAMPLE_INTERPRETATION;
   const liveDatasets = analysisMode === "live" ? discovery?.datasets ?? [] : EXAMPLE_DATASETS;
-  return <div className="site-shell">
+  return <div className={`site-shell${stage === "graph" ? " graph-active" : ""}`}>
     <header className="site-header">
-      <div className="brand-row"><span className="brand">DataOPedia</span><span className="preview-label">{analysisMode === "live" ? "Live repository search" : "Static preview · cached UCI example"}</span>{authControls}</div>
+      <div className="brand-row"><span className="brand">DataOPedia</span><span className="preview-label">{analysisMode === "live" ? "Live repository search" : "Static preview · cached UCI example"}</span><div className="header-actions"><ThemeToggle />{authControls}</div></div>
       <nav aria-label="Research navigation" className="stage-nav">
-        {stages.map(({ key, label }, index) => <button type="button" key={key} aria-current={stage === key ? "page" : undefined} onClick={() => setStage(key)}><span className="nav-index" aria-hidden="true">0{index + 1}</span>{label}</button>)}
+        {stages.map(({ key, label }, index) => <button type="button" key={key} aria-current={stage === key ? "page" : undefined} onClick={() => navigate(key)}><span className="nav-index" aria-hidden="true">0{index + 1}</span>{label}</button>)}
       </nav>
     </header>
-    <main id="main-content" className="stage-main">{stage !== "question" && stage !== "history" && stage !== "connections" && <div className="example-context"><span className="data-label">{analysisMode === "live" ? "Research question" : "Cached example question"}</span><span>{analysisMode === "live" ? activeQuestion : EXAMPLE_QUESTION}</span><button type="button" onClick={() => setStage("question")}>Revise question</button></div>}{stage === "question" ? <ResearchQuestion exampleQuestion={EXAMPLE_QUESTION} apiBase={apiBase} onOpenResearch={openResearch} onExploreExample={() => { requestSequence.current += 1; setDiscovery(null); setActiveQuestion(EXAMPLE_QUESTION); setAnalysisMode("preview"); setAnalysis(EXAMPLE_ANALYSIS); setExploration(EXAMPLE_EXPLORATION); setAnalysisError(""); setGraph(null); setGraphError(""); setGraphLoading(false); setStage("interpretation"); }} onSearch={liveSearchEnabled ? search : undefined} /> : stage === "history" ? <PastResearch apiBase={apiBase} selectedQueryId={selectedQueryId} onSelectQuery={setSelectedQueryId} onOpenConnections={openConnections} /> : stage === "connections" ? <ResearchConnectionsGraph apiBase={apiBase} onSelectQuery={openResearch} /> : stage === "interpretation" ? <InterpretationSheet interpretation={liveInterpretation} processingMode={analysisMode === "live" ? discovery?.processing_mode : "keyword_fallback"} onSearchQuestion={liveSearchEnabled ? search : undefined} /> : stage === "datasets" ? <DatasetLedger datasets={liveDatasets} discovery={analysisMode === "live" ? discovery : null} analysisMode={analysisMode} analysisLoading={analysisLoading} analysisError={analysisError} onOpenAnalysis={openAnalysis} graph={graph} graphLoading={graphLoading} graphError={graphError} /> : stage === "graph" ? <DatasetGraph graph={graph} datasets={liveDatasets} loading={graphLoading} error={graphError} /> : analysisMode === "live" && !analysis ? <section className="analysis-page" aria-labelledby="analysis-title"><p className="eyebrow">Research instrument / 05 — Analysis</p><h1 id="analysis-title">Analysis</h1><div className="empty-state" role="status"><h2>No dataset analyzed</h2><p>Select an eligible UCI dataset from the discovery ledger to load a computed profile.</p></div></section> : <AnalysisView analysis={analysis ?? EXAMPLE_ANALYSIS} exploration={analysisMode === "live" ? exploration : EXAMPLE_EXPLORATION} />}</main>
-    <footer className="site-footer">DataOPedia / Research instrument · {analysisMode === "live" ? "Live repository metadata" : "Cached UCI example"}</footer>
+    <main id="main-content" className="stage-main">{stage !== "question" && stage !== "graph" && stage !== "history" && stage !== "connections" && <div className="example-context"><span className="data-label">{analysisMode === "live" ? "Research question" : "Cached example question"}</span><span>{analysisMode === "live" ? activeQuestion : EXAMPLE_QUESTION}</span><button type="button" onClick={() => navigate("question")}>Revise question</button></div>}{stage === "question" ? <ResearchQuestion exampleQuestion={EXAMPLE_QUESTION} apiBase={apiBase} onOpenResearch={openResearch} onExploreExample={() => { requestSequence.current += 1; searchController.current?.abort(); analysisController.current?.abort(); analysisSequence.current++; setAnalysisLoading(false); graphSession.current = newSession(); setDiscovery(null); setActiveQuestion(EXAMPLE_QUESTION); setAnalysisMode("preview"); setAnalysis(EXAMPLE_ANALYSIS); setExploration(EXAMPLE_EXPLORATION); setAnalysisError(""); setGraph(null); setGraphError(""); setGraphLoading(false); setStage("interpretation"); }} onSearch={liveSearchEnabled ? search : undefined} /> : stage === "history" ? <PastResearch apiBase={apiBase} selectedQueryId={selectedQueryId} onSelectQuery={setSelectedQueryId} onOpenConnections={openConnections} /> : stage === "connections" ? <ResearchConnectionsGraph apiBase={apiBase} onSelectQuery={openResearch} /> : stage === "interpretation" ? <InterpretationSheet interpretation={liveInterpretation} processingMode={analysisMode === "live" ? discovery?.processing_mode : "keyword_fallback"} onSearchQuestion={liveSearchEnabled ? search : undefined} /> : stage === "datasets" ? <DatasetLedger datasets={liveDatasets} discovery={analysisMode === "live" ? discovery : null} analysisMode={analysisMode} analysisLoading={analysisLoading} analysisError={analysisError} onOpenAnalysis={openAnalysis} onOpenGraph={() => navigate("graph")} /> : stage === "graph" ? <Suspense fallback={<p role="status">Loading graph workspace…</p>}><DatasetGraph graph={graph} datasets={liveDatasets} loading={graphLoading} error={graphError} question={activeQuestion} generation={requestSequence.current} cached={analysisMode === "preview"} interpretation={liveInterpretation} keyword={analysisMode === "preview" || discovery?.processing_mode === "keyword_fallback"} analysis={analysis} onAnalyze={openAnalysis} analysisLoading={analysisLoading} analysisError={analysisError} sessionRef={graphSession} onRetry={analysisMode === "live" && discovery ? () => void loadGraph(activeQuestion, requestSequence.current) : undefined} /></Suspense> : analysisMode === "live" && !analysis ? <section className="analysis-page" aria-labelledby="analysis-title"><p className="eyebrow">Research instrument / 05 — Analysis</p><h1 id="analysis-title">Analysis</h1><div className="empty-state" role="status"><h2>No dataset analyzed</h2><p>Select an eligible UCI dataset from the discovery ledger to load a computed profile.</p></div></section> : <AnalysisView analysis={analysis ?? EXAMPLE_ANALYSIS} exploration={analysisMode === "live" ? exploration : EXAMPLE_EXPLORATION} />}</main>
+    {stage !== "graph" && <footer className="site-footer">DataOPedia / Research instrument · {analysisMode === "live" ? "Live repository metadata" : "Cached UCI example"}</footer>}
   </div>;
 }
 

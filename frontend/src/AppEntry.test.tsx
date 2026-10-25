@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import AppEntry from "./AppEntry";
 
@@ -14,28 +14,34 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // Unmount while media mocks are still available to pending React effects.
+  cleanup();
   window.history.replaceState(null, "", "/");
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
-it("preserves the research preview and its five stages at the root", () => {
+it.each(["/dashboard", "/dashboard/", "/dashboard?source=landing"])("opens the research dashboard at %s", (path) => {
+  window.history.replaceState(null, "", path);
   render(<AppEntry />);
   expect(screen.getByText("Static preview · cached UCI example")).toBeVisible();
-  expect(screen.getByRole("navigation", { name: "Preview stages" }).children).toHaveLength(5);
+  expect(screen.getByRole("navigation", { name: "Research navigation" }).children).toHaveLength(7);
   expect(screen.queryByTestId("research-world")).not.toBeInTheDocument();
 });
 
-it.each(["/landing", "/landing/", "/landing?source=preview"])(
+it.each(["/", "/?source=preview"])(
   "opens the isolated, accessible composition at %s without API calls",
   async (path) => {
     window.history.replaceState(null, "", path);
     const request = vi.spyOn(globalThis, "fetch");
     render(<AppEntry />);
     expect(await screen.findByRole("heading", { level: 1, name: "Every question opens a world." })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Open research preview" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Open research preview" })).toHaveAttribute("href", "/dashboard");
+    expect(screen.getByRole("link", { name: "Research preview" })).toHaveAttribute("href", "/dashboard");
+    expect(screen.getByRole("link", { name: "Explore research preview" })).toHaveAttribute("href", "/dashboard");
+    expect(screen.getByRole("link", { name: "DataOPedia home" })).toHaveAttribute("href", "/");
     expect(screen.queryByRole("contentinfo")).not.toBeInTheDocument();
-    expect(screen.queryByRole("navigation", { name: "Preview stages" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Research navigation" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("research-world")).not.toBeInTheDocument();
     expect(request).not.toHaveBeenCalled();
   },
@@ -44,6 +50,22 @@ it.each(["/landing", "/landing/", "/landing?source=preview"])(
 it("keeps the existing preview fallback for other paths", () => {
   window.history.replaceState(null, "", "/landing/not-a-route");
   render(<AppEntry />);
+  expect(screen.getByRole("textbox", { name: "Research question" })).toBeVisible();
+});
+
+it("shows auth controls in the landing header", async () => {
+  render(<AppEntry authControls={<button type="button">Log in</button>} />);
+  await screen.findByRole("heading", { level: 1, name: "Every question opens a world." });
+  expect(screen.getByRole("banner")).toContainElement(screen.getByRole("button", { name: "Log in" }));
+});
+
+it("opens the dashboard when the authentication callback updates the route", async () => {
+  render(<AppEntry />);
+  await screen.findByRole("heading", { level: 1, name: "Every question opens a world." });
+  act(() => {
+    window.history.replaceState(null, "", "/dashboard");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  });
   expect(screen.getByRole("textbox", { name: "Research question" })).toBeVisible();
 });
 
@@ -56,7 +78,7 @@ it("loads the scene in standard mode and responds to the device motion preferenc
     addEventListener: (_event: string, listener: () => void) => listeners.add(listener),
     removeEventListener: (_event: string, listener: () => void) => listeners.delete(listener),
   })));
-  window.history.replaceState(null, "", "/landing");
+  window.history.replaceState(null, "", "/");
   const { act } = await import("@testing-library/react");
   const view = render(<AppEntry />);
   expect(await screen.findByTestId("research-world")).toBeInTheDocument();

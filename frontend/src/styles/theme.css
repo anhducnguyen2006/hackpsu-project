@@ -1,0 +1,302 @@
+/* Theme colors are the single source of truth for CSS, SVG, WebGL and canvas. */
+@property --color-placeholder { syntax: "<color>"; inherits: true; initial-value: #757575; }
+@property --color-scene-accent { syntax: "<color>"; inherits: true; initial-value: #EAAA00; }
+@property --color-landing-text { syntax: "<color>"; inherits: true; initial-value: #3A0F34; }
+@property --color-bg { syntax: "<color>"; inherits: true; initial-value: #DDE3E8; }
+@property --color-surface { syntax: "<color>"; inherits: true; initial-value: #F6F7F6; }
+@property --color-text { syntax: "<color>"; inherits: true; initial-value: #201C24; }
+@property --color-heading { syntax: "<color>"; inherits: true; initial-value: #3A0F34; }
+@property --color-muted { syntax: "<color>"; inherits: true; initial-value: #5F6269; }
+@property --color-border { syntax: "<color>"; inherits: true; initial-value: #AEB8C0; }
+@property --color-accent { syntax: "<color>"; inherits: true; initial-value: #EAAA00; }
+@property --color-secondary { syntax: "<color>"; inherits: true; initial-value: #3A0F34; }
+@property --color-danger { syntax: "<color>"; inherits: true; initial-value: #8A3A2B; }
+@property --color-action-bg { syntax: "<color>"; inherits: true; initial-value: #3A0F34; }
+@property --color-on-action { syntax: "<color>"; inherits: true; initial-value: white; }
+@property --color-on-accent { syntax: "<color>"; inherits: true; initial-value: #3A0F34; }
+@property --color-inverse-bg { syntax: "<color>"; inherits: true; initial-value: #3A0F34; }
+@property --color-inverse-text { syntax: "<color>"; inherits: true; initial-value: #F6F7F6; }
+@property --color-inverse-muted { syntax: "<color>"; inherits: true; initial-value: #d3c2ce; }
+@property --color-inverse-border { syntax: "<color>"; inherits: true; initial-value: #826b7b; }
+@property --color-chart-guide { syntax: "<color>"; inherits: true; initial-value: #d8dcdf; }
+@property --color-graph-muted { syntax: "<color>"; inherits: true; initial-value: #685d70; }
+@property --color-graph-hover { syntax: "<color>"; inherits: true; initial-value: #3a0f340a; }
+@property --color-float-shadow { syntax: "<color>"; inherits: true; initial-value: #3a0f3414; }
+@property --color-soft-shadow { syntax: "<color>"; inherits: true; initial-value: #3a0f340a; }
+@property --color-label-shadow { syntax: "<color>"; inherits: true; initial-value: #3a0f3412; }
+@property --color-panel { syntax: "<color>"; inherits: true; initial-value: #f6f7f6fa; }
+@property --color-toolbar { syntax: "<color>"; inherits: true; initial-value: #f6f7f6e8; }
+@property --color-tooltip { syntax: "<color>"; inherits: true; initial-value: #f6f7f6f5; }
+@property --color-input { syntax: "<color>"; inherits: true; initial-value: #fff; }
+@property --color-input-border { syntax: "<color>"; inherits: true; initial-value: #3a0f3420; }
+@property --color-label-halo { syntax: "<color>"; inherits: true; initial-value: #ffffff80; }
+@property --color-graph-focus { syntax: "<color>"; inherits: true; initial-value: #287F8C; }
+@property --color-graph-edge { syntax: "<color>"; inherits: true; initial-value: #7F7888; }
+@property --color-graph-inferred { syntax: "<color>"; inherits: true; initial-value: #82699C; }
+@property --color-connection-edge { syntax: "<color>"; inherits: true; initial-value: #8d7888; }
+@property --color-node-question { syntax: "<color>"; inherits: true; initial-value: #B77A08; }
+@property --color-node-dataset { syntax: "<color>"; inherits: true; initial-value: #287F8C; }
+@property --color-node-variable { syntax: "<color>"; inherits: true; initial-value: #657786; }
+@property --color-node-concept { syntax: "<color>"; inherits: true; initial-value: #79609C; }
+@property --color-node-domain { syntax: "<color>"; inherits: true; initial-value: #77718B; }
+@property --color-halo-question-clear { syntax: "<color>"; inherits: true; initial-value: #f4b54400; }
+@property --color-halo-question { syntax: "<color>"; inherits: true; initial-value: #f4b54425; }
+@property --color-halo-selection-clear { syntax: "<color>"; inherits: true; initial-value: #a895d000; }
+@property --color-halo-selection { syntax: "<color>"; inherits: true; initial-value: #a895d037; }
+@property --color-intro-particle { syntax: "<color>"; inherits: true; initial-value: #A895D0; }
+@property --color-intro-line { syntax: "<color>"; inherits: true; initial-value: #81C9D6; }
+@property --color-cinema-bg { syntax: "<color>"; inherits: true; initial-value: #060010; }
+@property --color-cinema-text { syntax: "<color>"; inherits: true; initial-value: #f5f5f6; }
+@property --color-cinema-muted { syntax: "<color>"; inherits: true; initial-value: #bdbbc3; }
+@property --color-cinema-action { syntax: "<color>"; inherits: true; initial-value: #f1f0f3; }
+@property --color-cinema-action-text { syntax: "<color>"; inherits: true; initial-value: #151319; }
+@property --color-cinema-action-hover { syntax: "<color>"; inherits: true; initial-value: #d7d5dc; }
+@property --color-cinema-control { syntax: "<color>"; inherits: true; initial-value: #222026; }
+@property --color-cinema-control-text { syntax: "<color>"; inherits: true; initial-value: #eeeef0; }
+@property --color-cinema-control-hover { syntax: "<color>"; inherits: true; initial-value: #343138; }
+@property --color-cinema-menu { syntax: "<color>"; inherits: true; initial-value: #201d25; }
+@property --color-cinema-menu-text { syntax: "<color>"; inherits: true; initial-value: #cac7ce; }
+@property --color-cinema-credit { syntax: "<color>"; inherits: true; initial-value: #bdb9c4; }
+@property --color-cinema-shadow { syntax: "<color>"; inherits: true; initial-value: #0008; }
+@property --color-cinema-scrim-strong { syntax: "<color>"; inherits: true; initial-value: rgb(6 0 16 / .95); }
+@property --color-cinema-scrim-soft { syntax: "<color>"; inherits: true; initial-value: rgb(6 0 16 / .65); }
+@property --color-photo-scrim-top { syntax: "<color>"; inherits: true; initial-value: rgb(20 5 18 / .42); }
+@property --color-photo-scrim-bottom { syntax: "<color>"; inherits: true; initial-value: rgb(20 5 18 / .72); }
+@property --color-media-text { syntax: "<color>"; inherits: true; initial-value: rgb(255 255 255 / .9); }
+@property --color-media-scrim { syntax: "<color>"; inherits: true; initial-value: rgb(0 0 0 / .7); }
+@property --color-media-placeholder { syntax: "<color>"; inherits: true; initial-value: #0b0b12; }
+@property --color-white { syntax: "<color>"; inherits: true; initial-value: white; }
+:root, [data-theme="light"] {
+  color-scheme: light;
+  --color-scene-accent: #EAAA00;
+  --color-landing-text: #3A0F34;
+  --color-placeholder: #757575;
+  --color-bg: #DDE3E8;
+  --color-surface: #F6F7F6;
+  --color-text: #201C24;
+  --color-heading: #3A0F34;
+  --color-muted: #5F6269;
+  --color-border: #AEB8C0;
+  --color-accent: #EAAA00;
+  --color-secondary: #3A0F34;
+  --color-danger: #8A3A2B;
+  --color-action-bg: #3A0F34;
+  --color-on-action: white;
+  --color-on-accent: #3A0F34;
+  --color-inverse-bg: #3A0F34;
+  --color-inverse-text: #F6F7F6;
+  --color-inverse-muted: #d3c2ce;
+  --color-inverse-border: #826b7b;
+  --color-chart-guide: #d8dcdf;
+  --color-graph-muted: #685d70;
+  --color-graph-hover: #3a0f340a;
+  --color-float-shadow: #3a0f3414;
+  --color-soft-shadow: #3a0f340a;
+  --color-label-shadow: #3a0f3412;
+  --color-panel: #f6f7f6fa;
+  --color-toolbar: #f6f7f6e8;
+  --color-tooltip: #f6f7f6f5;
+  --color-input: #fff;
+  --color-input-border: #3a0f3420;
+  --color-label-halo: #ffffff80;
+  --color-graph-focus: #287F8C;
+  --color-graph-edge: #7F7888;
+  --color-graph-inferred: #82699C;
+  --color-connection-edge: #8d7888;
+  --color-node-question: #B77A08;
+  --color-node-dataset: #287F8C;
+  --color-node-variable: #657786;
+  --color-node-concept: #79609C;
+  --color-node-domain: #77718B;
+  --color-halo-question-clear: #f4b54400;
+  --color-halo-question: #f4b54425;
+  --color-halo-selection-clear: #a895d000;
+  --color-halo-selection: #a895d037;
+  --color-intro-particle: #A895D0;
+  --color-intro-line: #81C9D6;
+  --color-cinema-bg: #060010;
+  --color-cinema-text: #f5f5f6;
+  --color-cinema-muted: #bdbbc3;
+  --color-cinema-action: #f1f0f3;
+  --color-cinema-action-text: #151319;
+  --color-cinema-action-hover: #d7d5dc;
+  --color-cinema-control: #222026;
+  --color-cinema-control-text: #eeeef0;
+  --color-cinema-control-hover: #343138;
+  --color-cinema-menu: #201d25;
+  --color-cinema-menu-text: #cac7ce;
+  --color-cinema-credit: #bdb9c4;
+  --color-cinema-shadow: #0008;
+  --color-cinema-scrim-strong: rgb(6 0 16 / .95);
+  --color-cinema-scrim-soft: rgb(6 0 16 / .65);
+  --color-photo-scrim-top: rgb(20 5 18 / .42);
+  --color-photo-scrim-bottom: rgb(20 5 18 / .72);
+  --color-media-text: rgb(255 255 255 / .9);
+  --color-media-scrim: rgb(0 0 0 / .7);
+  --color-media-placeholder: #0b0b12;
+  --color-white: white;
+}
+[data-theme="dark"] {
+  color-scheme: dark;
+  --color-scene-accent: #6C5636;
+  --color-landing-text: #F4EFE6;
+  --color-placeholder: #B6AD9E;
+  --color-bg: #090907;
+  --color-surface: #171610;
+  --color-text: #F4EFE6;
+  --color-heading: #D2BA95;
+  --color-muted: #B6AD9E;
+  --color-border: #80705A;
+  --color-accent: #B99D73;
+  --color-secondary: #6C5636;
+  --color-danger: #F0AA96;
+  --color-action-bg: #6C5636;
+  --color-on-action: #F6F1E8;
+  --color-on-accent: #090907;
+  --color-inverse-bg: #302719;
+  --color-inverse-text: #F4EFE6;
+  --color-inverse-muted: #D1C3AC;
+  --color-inverse-border: #89734F;
+  --color-chart-guide: #554A38;
+  --color-graph-muted: #B6AD9E;
+  --color-graph-hover: #b99d7314;
+  --color-float-shadow: #00000066;
+  --color-soft-shadow: #00000033;
+  --color-label-shadow: #00000055;
+  --color-panel: #201D17FA;
+  --color-toolbar: #201D17E8;
+  --color-tooltip: #201D17F5;
+  --color-input: #171610;
+  --color-input-border: #89734F;
+  --color-label-halo: #09090780;
+  --color-graph-focus: #C4AC87;
+  --color-graph-edge: #9C8B70;
+  --color-graph-inferred: #B9A38A;
+  --color-connection-edge: #AE9B7C;
+  --color-node-question: #B99D73;
+  --color-node-dataset: #B8C1A4;
+  --color-node-variable: #A49B89;
+  --color-node-concept: #C4A38A;
+  --color-node-domain: #B7AA98;
+  --color-halo-question-clear: #b99d7300;
+  --color-halo-question: #b99d7325;
+  --color-halo-selection-clear: #c4ac8700;
+  --color-halo-selection: #c4ac8737;
+  --color-intro-particle: #B99D73;
+  --color-intro-line: #C4AC87;
+  --color-cinema-bg: #090907;
+  --color-cinema-text: #F4EFE6;
+  --color-cinema-muted: #B6AD9E;
+  --color-cinema-action: #B99D73;
+  --color-cinema-action-text: #090907;
+  --color-cinema-action-hover: #D2BA95;
+  --color-cinema-control: #302719;
+  --color-cinema-control-text: #F4EFE6;
+  --color-cinema-control-hover: #493B29;
+  --color-cinema-menu: #201D17;
+  --color-cinema-menu-text: #D1C3AC;
+  --color-cinema-credit: #B6AD9E;
+  --color-cinema-shadow: #0008;
+  --color-cinema-scrim-strong: rgb(9 9 7 / .95);
+  --color-cinema-scrim-soft: rgb(9 9 7 / .65);
+  --color-photo-scrim-top: rgb(9 9 7 / .42);
+  --color-photo-scrim-bottom: rgb(9 9 7 / .72);
+  --color-media-text: rgb(246 241 232 / .95);
+  --color-media-scrim: rgb(9 9 7 / .7);
+  --color-media-placeholder: #171610;
+  --color-white: #F4EFE6;
+}
+:root {
+  --ice: var(--color-bg);
+  --paper: var(--color-surface);
+  --ink: var(--color-text);
+  --aubergine: var(--color-heading);
+  --marigold: var(--color-accent);
+  --muted: var(--color-muted);
+  --rule: var(--color-border);
+  --caution: var(--color-danger);
+  --landing-ice: var(--color-bg);
+  --landing-aubergine: var(--color-heading);
+  --landing-marigold: var(--color-accent);
+  --landing-paper: var(--color-surface);
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme-ready] {
+    transition: --color-scene-accent 400ms ease-in-out,
+      --color-landing-text 400ms ease-in-out,
+      --color-placeholder 400ms ease-in-out,
+      --color-bg 400ms ease-in-out,
+      --color-surface 400ms ease-in-out,
+      --color-text 400ms ease-in-out,
+      --color-heading 400ms ease-in-out,
+      --color-muted 400ms ease-in-out,
+      --color-border 400ms ease-in-out,
+      --color-accent 400ms ease-in-out,
+      --color-secondary 400ms ease-in-out,
+      --color-danger 400ms ease-in-out,
+      --color-action-bg 400ms ease-in-out,
+      --color-on-action 400ms ease-in-out,
+      --color-on-accent 400ms ease-in-out,
+      --color-inverse-bg 400ms ease-in-out,
+      --color-inverse-text 400ms ease-in-out,
+      --color-inverse-muted 400ms ease-in-out,
+      --color-inverse-border 400ms ease-in-out,
+      --color-chart-guide 400ms ease-in-out,
+      --color-graph-muted 400ms ease-in-out,
+      --color-graph-hover 400ms ease-in-out,
+      --color-float-shadow 400ms ease-in-out,
+      --color-soft-shadow 400ms ease-in-out,
+      --color-label-shadow 400ms ease-in-out,
+      --color-panel 400ms ease-in-out,
+      --color-toolbar 400ms ease-in-out,
+      --color-tooltip 400ms ease-in-out,
+      --color-input 400ms ease-in-out,
+      --color-input-border 400ms ease-in-out,
+      --color-label-halo 400ms ease-in-out,
+      --color-graph-focus 400ms ease-in-out,
+      --color-graph-edge 400ms ease-in-out,
+      --color-graph-inferred 400ms ease-in-out,
+      --color-connection-edge 400ms ease-in-out,
+      --color-node-question 400ms ease-in-out,
+      --color-node-dataset 400ms ease-in-out,
+      --color-node-variable 400ms ease-in-out,
+      --color-node-concept 400ms ease-in-out,
+      --color-node-domain 400ms ease-in-out,
+      --color-halo-question-clear 400ms ease-in-out,
+      --color-halo-question 400ms ease-in-out,
+      --color-halo-selection-clear 400ms ease-in-out,
+      --color-halo-selection 400ms ease-in-out,
+      --color-intro-particle 400ms ease-in-out,
+      --color-intro-line 400ms ease-in-out,
+      --color-cinema-bg 400ms ease-in-out,
+      --color-cinema-text 400ms ease-in-out,
+      --color-cinema-muted 400ms ease-in-out,
+      --color-cinema-action 400ms ease-in-out,
+      --color-cinema-action-text 400ms ease-in-out,
+      --color-cinema-action-hover 400ms ease-in-out,
+      --color-cinema-control 400ms ease-in-out,
+      --color-cinema-control-text 400ms ease-in-out,
+      --color-cinema-control-hover 400ms ease-in-out,
+      --color-cinema-menu 400ms ease-in-out,
+      --color-cinema-menu-text 400ms ease-in-out,
+      --color-cinema-credit 400ms ease-in-out,
+      --color-cinema-shadow 400ms ease-in-out,
+      --color-cinema-scrim-strong 400ms ease-in-out,
+      --color-cinema-scrim-soft 400ms ease-in-out,
+      --color-photo-scrim-top 400ms ease-in-out,
+      --color-photo-scrim-bottom 400ms ease-in-out,
+      --color-media-text 400ms ease-in-out,
+      --color-media-scrim 400ms ease-in-out,
+      --color-media-placeholder 400ms ease-in-out,
+      --color-white 400ms ease-in-out;
+  }
+}
+
+.header-actions { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.theme-toggle { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 44px; width: 44px; height: 44px; padding: 0; border: 1px solid currentColor; border-radius: 50%; background: transparent; color: inherit; pointer-events: auto; }
+.theme-toggle:hover { background: var(--color-graph-hover); }
+.theme-toggle:active { background: var(--color-surface); }
+.theme-toggle svg { flex: none; }
+@media (max-width: 640px) { .header-actions { gap: 8px; } .brand-row { flex-wrap: wrap; } .brand-row .header-actions { margin-left: auto; } }
+
+input::placeholder, textarea::placeholder { color: var(--color-placeholder); opacity: 1; }

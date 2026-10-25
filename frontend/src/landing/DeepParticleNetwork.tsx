@@ -2,11 +2,12 @@ import { useThree } from "@react-three/fiber";
 import { useMemo } from "react";
 import { createDeepNetwork } from "./deepNetwork";
 import { createParticleConnections } from "./sceneModel";
-import { PALETTE } from "./palette";
+import { useLandingPalette } from "./palette";
 import { softenNearGeometry } from "./nearFade";
 import type { WorldHandles } from "./worldHandles";
 
 export default function DeepParticleNetwork({ handles }: { handles: WorldHandles }) {
+  const PALETTE = useLandingPalette();
   const { size } = useThree();
   const mobile = size.width < 760;
   const positions = useMemo(() => createDeepNetwork(size.width, size.height), [size.width, size.height]);

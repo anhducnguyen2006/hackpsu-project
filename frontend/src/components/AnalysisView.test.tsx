@@ -9,7 +9,8 @@ it("shows cached computed values without a fabricated suitability score", () => 
     expect(screen.getAllByText(value).length).toBeGreaterThan(0);
   }
   expect(screen.getByText(/two cached variable profiles of 33 total columns/i)).toBeVisible();
-  expect(screen.getByText(/ordinal.*encoded/i)).toBeVisible();
+  expect(screen.getByText("ordinal")).toBeVisible();
+  expect(screen.getByText("weekly study time")).toBeVisible();
   expect(screen.getAllByText("Unavailable")).toHaveLength(7);
   expect(screen.getByText(/do not establish causation/i)).toBeVisible();
   expect(screen.queryByText(/suitability.*\/100/i)).not.toBeInTheDocument();

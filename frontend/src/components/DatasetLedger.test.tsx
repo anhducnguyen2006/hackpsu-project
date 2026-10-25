@@ -36,3 +36,9 @@ it("does not replace null metadata or relevance with zero", () => {
   expect(within(row).getAllByText("Not documented")).toHaveLength(2);
   expect(within(row).queryByText("0")).not.toBeInTheDocument();
 });
+
+it('navigates to the graph workspace without mounting a nested renderer', async()=>{
+ const onOpenGraph=vi.fn();const {container}=render(<DatasetLedger datasets={EXAMPLE_DATASETS} onOpenAnalysis={()=>{}} onOpenGraph={onOpenGraph}/>);
+ await userEvent.click(screen.getByRole('button',{name:'Graph view'}));
+ expect(onOpenGraph).toHaveBeenCalledOnce();expect(container.querySelector('canvas')).toBeNull();expect(screen.getByText('Student Performance')).toBeVisible();
+});

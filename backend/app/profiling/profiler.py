@@ -99,7 +99,7 @@ class DataProfiler:
             measurement_type = source_measurement_type
         elif self._is_binary(series, variable_description):
             measurement_type = "binary"
-        elif numeric and unique_count <= 10 and self._ordinal_context(
+        elif numeric and self._is_discrete_numeric(series) and unique_count <= 10 and self._ordinal_context(
             str(series.name), variable_description
         ):
             measurement_type = "ordinal"

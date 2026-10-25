@@ -14,7 +14,7 @@ it("shows five local stages and never requests data", async () => {
     expect(screen.getByRole("button", { name })).toBeVisible();
   }
   await userEvent.click(screen.getByRole("button", { name: "Graph" }));
-  expect(screen.getByRole("heading", { name: "Graph" })).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "Graph" })).toBeVisible();
   expect(screen.queryByRole("heading", { name: "Datasets" })).not.toBeInTheDocument();
   expect(request).not.toHaveBeenCalled();
 });
@@ -26,7 +26,7 @@ it("walks the cached example through all five stages without requests", async ()
   await userEvent.click(screen.getByRole("button", { name: "Explore the example" }));
   for (const name of ["Interpretation", "Datasets", "Graph", "Analysis"]) {
     if (name !== "Interpretation") await userEvent.click(screen.getByRole("button", { name }));
-    expect(screen.getByRole("heading", { name })).toBeVisible();
+    expect(await screen.findByRole("heading", { name })).toBeVisible();
     expect(screen.getByText("Static preview · cached UCI example")).toBeVisible();
     expect(screen.getByText("Cached example question")).toBeVisible();
     expect(screen.getAllByText("How is study time associated with academic performance?").length).toBeGreaterThan(0);
@@ -47,7 +47,7 @@ it("keeps an edited question separate from fixed example results", async () => {
 
 it("renders the live interpretation and discovery response", async () => {
   vi.stubEnv("VITE_API_BASE_URL", "http://localhost:8000");
-  const request = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+  const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (url) => String(url).endsWith("/graph") ? ({ok:true,json:async()=>({nodes:[],edges:[]})} as Response) : ({
     ok: true,
     json: async () => ({
       interpretation: {
@@ -56,6 +56,7 @@ it("renders the live interpretation and discovery response", async () => {
         independent_variables: ["rainfall"],
         dependent_variables: ["crop yield"],
         target_population: "farms",
+        assumptions_or_ambiguities: [],
         synonyms: ["precipitation"],
         search_terms: ["rainfall", "crop", "yield"],
       },
@@ -85,7 +86,7 @@ it("renders the live interpretation and discovery response", async () => {
       processing_mode: "gemini",
       ranking_status: "semantic_embeddings",
     }),
-  } as Response);
+  } as Response));
   render(<App />);
   await userEvent.type(screen.getByRole("textbox", { name: "Research question" }), "Does rainfall relate to crop yield?");
   await userEvent.click(screen.getByRole("button", { name: "Find datasets" }));

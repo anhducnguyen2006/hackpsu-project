@@ -15,6 +15,6 @@ frontend/dist/
 
 .agents/
 .docs/
-.hallmark/
 .playwright-mcp/
+.hallmark/
 .superpowers/

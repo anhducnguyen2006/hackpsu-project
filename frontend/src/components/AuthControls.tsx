@@ -8,5 +8,5 @@ export function AuthControls() {
   if (isAuthenticated) {
     return <div className="auth-controls"><span className="auth-user">{user?.email}</span><button type="button" className="secondary-action" onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}>Log out</button></div>;
   }
-  return <div className="auth-controls"><button type="button" className="secondary-action" onClick={() => loginWithRedirect({ authorizationParams: { screen_hint: "signup" } })}>Sign up</button><button type="button" className="primary-action" onClick={() => loginWithRedirect()}>Log in</button></div>;
+  return <div className="auth-controls"><button type="button" className="secondary-action" onClick={() => loginWithRedirect({ appState: { returnTo: "/dashboard" }, authorizationParams: { screen_hint: "signup" } })}>Sign up</button><button type="button" className="primary-action" onClick={() => loginWithRedirect({ appState: { returnTo: "/dashboard" } })}>Log in</button></div>;
 }

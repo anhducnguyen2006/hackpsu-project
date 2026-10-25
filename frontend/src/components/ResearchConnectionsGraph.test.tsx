@@ -1,11 +1,14 @@
+import { act } from "@testing-library/react";
+import { setTheme } from "../theme/theme";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { ResearchConnectionsGraph } from "./ResearchConnectionsGraph";
 
 const cytoscapeMock = vi.hoisted(() => vi.fn((_options: unknown) => {
+    const stylesheet = { selector: vi.fn().mockReturnThis(), style: vi.fn().mockReturnThis(), update: vi.fn().mockReturnThis() };
     const collection = { removeClass: vi.fn(), addClass: vi.fn() };
-    return { on: vi.fn(), elements: vi.fn(() => collection), $id: vi.fn(() => collection), fit: vi.fn(), resize: vi.fn(), destroy: vi.fn() };
+    return { style: vi.fn(() => stylesheet), on: vi.fn(), elements: vi.fn(() => collection), $id: vi.fn(() => collection), fit: vi.fn(), resize: vi.fn(), destroy: vi.fn() };
 }));
 
 vi.mock("cytoscape", () => ({ default: cytoscapeMock }));
@@ -123,4 +126,20 @@ it("aborts the graph request when the component unmounts", async () => {
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
   unmount();
   expect(requestSignal?.aborted).toBe(true);
+});
+
+it('updates canvas styles in place on a theme change without refitting or recreating the graph', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(graph), {status:200}));
+  vi.stubGlobal('matchMedia', () => ({matches:true}));
+  const view=render(<ResearchConnectionsGraph apiBase="http://localhost:8000" onSelectQuery={vi.fn()} />);
+  await screen.findByRole('button', {name:'Open saved research 4: Does rainfall affect crop yield?'});
+  const cy=cytoscapeMock.mock.results[0].value;
+  const updates=cy.style().update.mock.calls.length;
+  document.documentElement.dataset.theme='light';
+  act(()=>setTheme('dark'));
+  expect(cytoscapeMock).toHaveBeenCalledTimes(1);
+  expect(cy.style().update.mock.calls.length).toBeGreaterThan(updates);
+  expect(cy.destroy).not.toHaveBeenCalled();
+  view.unmount();
+  document.documentElement.removeAttribute('data-theme');
 });
