@@ -1,25 +1,8 @@
 export type DatasetStatus = "metadata_only" | "available" | "failed" | "analyzed";
 
-export type EligibilityStatus =
-  | "supported_resource_verified"
-  | "download_verified"
-  | "unsupported"
-  | "restricted"
-  | "verification_failed"
-  | "unverified";
-
 export interface DownloadResource {
   url: string;
   format: string;
-  file_id?: string | null;
-  filename?: string | null;
-  original_filename?: string | null;
-  content_type?: string | null;
-  original_format?: string | null;
-  size_bytes?: number | null;
-  checksum?: string | null;
-  access_status?: string | null;
-  eligible?: boolean;
 }
 
 export interface ConceptMatch {
@@ -52,14 +35,6 @@ export interface DatasetCardData {
   temporal_coverage?: string[];
   doi?: string | null;
   license?: string | null;
-  authors?: string[];
-  publisher?: string | null;
-  publication_date?: string | null;
-  keywords?: string[];
-  eligibility_status?: EligibilityStatus;
-  eligibility_reason?: string | null;
-  download_performed?: boolean;
-  source_version?: string | null;
   data_status: DatasetStatus;
   preliminary_relevance_score: number | null;
   semantic_similarity_score?: number | null;
@@ -70,7 +45,6 @@ export interface DatasetCardData {
   matched_research_variables?: string[];
   missing_or_unverified_variables?: string[];
   classification?: "relevant" | "partially_relevant" | "irrelevant";
-  verification_candidates?: DownloadResource[];
 }
 
 export interface ResearchInterpretation {
@@ -95,7 +69,6 @@ export interface DiscoveryResponse {
   warnings: string[];
   processing_mode: "gemini" | "partial_gemini" | "keyword_fallback";
   ranking_status?: "semantic_embeddings" | "keyword_fallback" | "unavailable" | "demo_cached";
-  research_query_id?: number | null;
 }
 
 export interface ResearchHistoryItem {
@@ -267,13 +240,6 @@ export interface DatasetAnalysisResponse {
   assessment: ResearchAssessment | null;
   ai_assessment_status: "available" | "unavailable";
   warnings: string[];
-  analyzed_resource?: DownloadResource | null;
-  eligibility_status?: EligibilityStatus | null;
-  download_performed?: boolean;
-  research_query_id?: number | null;
-  history_saved?: boolean;
-  source_doi?: string | null;
-  source_version?: string | null;
 }
 
 export interface ExploratoryAnalysisResponse {

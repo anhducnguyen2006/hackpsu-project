@@ -1,6 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 
-from app.auth import AuthenticatedPrincipal, require_principal
 from database.connection import get_connection
 
 router = APIRouter(tags=["health"])
@@ -12,10 +11,7 @@ def health() -> dict[str, str]:
 
 
 @router.get("/health/database")
-def database_health(
-    principal: AuthenticatedPrincipal = Depends(require_principal),
-) -> dict[str, str]:
-    del principal
+def database_health() -> dict[str, str]:
     try:
         with get_connection() as conn:
             conn.execute("SELECT 1")

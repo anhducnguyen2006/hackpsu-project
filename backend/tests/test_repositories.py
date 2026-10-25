@@ -6,7 +6,6 @@ import pytest
 
 from app.api.schemas import (
     DatasetRecord,
-    DownloadResource,
     RelevanceAssessmentBatch,
     ResearchInterpretation,
     UCIRecord,
@@ -66,8 +65,7 @@ def test_dataverse_search_uses_documented_dataset_filter() -> None:
     assert len(records) == 1
     assert records[0].id == "dataverse:doi:10.5072/FK2/ABC"
     assert records[0].doi == "doi:10.5072/FK2/ABC"
-    assert records[0].data_available is None
-    assert records[0].eligibility_status == "unverified"
+    assert records[0].data_available is True
     assert client.calls[0]["params"]["q"] == "climate rainfall"
     assert client.calls[0]["params"]["type"] == "dataset"
     assert client.calls[0]["params"]["per_page"] == 5
@@ -133,8 +131,6 @@ def test_zenodo_search_uses_published_dataset_filter_and_maps_files() -> None:
     assert len(records) == 1
     assert records[0].id == "zenodo:12345"
     assert records[0].download_resources[0].format == "csv"
-    assert records[0].eligibility_status == "supported_resource_verified"
-    assert records[0].download_performed is False
     assert records[0].license == "cc-by-4.0"
     assert client.calls[0]["params"] == {
         "q": "climate",
@@ -285,19 +281,6 @@ def _external_record(source: str, source_id: str, doi: str | None = None) -> Dat
         landing_page_url=f"https://{source.lower()}.example/records/{source_id}",
         doi=doi,
         data_available=True,
-        download_resources=[
-            DownloadResource(
-                url=f"https://{source.lower()}.example/files/{source_id}.csv",
-                format="csv",
-                filename=f"{source_id}.csv",
-                content_type="text/csv",
-                access_status="public",
-                eligible=True,
-            )
-        ],
-        eligibility_status="supported_resource_verified",
-        eligibility_reason="Trusted repository metadata lists a public CSV resource.",
-        download_performed=False,
     )
 
 

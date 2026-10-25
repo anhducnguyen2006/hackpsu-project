@@ -1,9 +1,24 @@
 from types import SimpleNamespace
 
+import pandas as pd
 import pytest
 
-from app.api.schemas import RelevanceAssessmentBatch, ResearchInterpretation, UCIRecord
-from app.assessment.gemini import GeminiService, GeminiUnavailableError
+from app.api.schemas import (
+    RelevanceAssessmentBatch,
+    ResearchAssessment,
+    ResearchInterpretation,
+    SuitabilityCriteria,
+    SuitabilityCriterion,
+    UCIRecord,
+)
+from app.assessment.gemini import (
+    GeminiService,
+    GeminiUnavailableError,
+    _thinking_config,
+    _interpret_thinking_config,
+)
+from app.config import settings
+from app.profiling.profiler import DataProfiler
 
 
 def _interpretation() -> ResearchInterpretation:
@@ -26,6 +41,86 @@ def _candidate(index: int) -> UCIRecord:
         repository_url=f"https://archive.ics.uci.edu/dataset/{index}",
         variables=["studytime", "G3"],
     )
+
+
+def _assessment_response():
+    criteria = {
+        key: SuitabilityCriterion(score=80, explanation="Verified evidence.")
+        for key in (
+            "research_question_and_outcome_alignment",
+            "required_variable_coverage",
+            "sample_size_considerations",
+            "data_quality_and_completeness",
+            "documentation_and_provenance",
+            "population_and_temporal_relevance",
+        )
+    }
+    assessment = ResearchAssessment(
+        dataset_summary="Verified tabular dataset.",
+        relevant_independent_variables=["studytime"],
+        relevant_outcome_variables=["G3"],
+        missing_or_unverified_research_variables=[],
+        why_useful=["Contains verified variables."],
+        statistical_methodological_strengths=["Adequate observations."],
+        data_quality_issues=[],
+        population_limitations=[],
+        sample_size_considerations=["Row count is not independent participant count."],
+        recommended_further_analyses=["Use an ordinal-aware analysis."],
+        overall_assessment="Potentially useful for an observational analysis.",
+        criteria=SuitabilityCriteria(**criteria),
+        final_score=None,
+        score_explanation="Python will calculate this.",
+        ai_status="available",
+    )
+    return SimpleNamespace(
+        parsed=assessment.model_dump(mode="json"),
+        text=None,
+        candidates=[SimpleNamespace(finish_reason="STOP")],
+    )
+
+
+def _suitability_inputs():
+    from app.profiling.profiler import DataProfiler
+
+    interpretation = _interpretation()
+    profile = DataProfiler().profile(
+        pd.DataFrame({"studytime": [1, 2, 3], "G3": [10, 12, 15]}),
+        interpretation,
+    )
+    return interpretation, _candidate(320), profile
+
+
+def test_interpret_thinking_config_matches_gemini_3_model() -> None:
+    from google.genai import types
+
+    modern = _thinking_config(types, "gemini-3.8-flash")
+    legacy = _thinking_config(types, "gemini-2.5-flash")
+
+    assert modern is not None
+    assert modern.thinking_level == types.ThinkingLevel.LOW
+    assert legacy is not None
+    assert legacy.thinking_budget == 0
+
+
+def test_interpret_supplies_thinking_config(monkeypatch) -> None:
+    from google.genai import types
+
+    captured = {}
+
+    def generate_content(**kwargs):
+        captured.update(kwargs)
+        return _interpretation_response()
+
+    monkeypatch.setattr(settings, "gemini_model", "gemini-3.8-flash")
+    monkeypatch.setattr(settings, "gemini_interpret_thinking_level", "low")
+    GeminiService(
+        SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+    ).interpret("How does pollution affect health?")
+
+    config = captured["config"]
+    assert config.response_mime_type == "application/json"
+    assert config.response_schema is ResearchInterpretation
+    assert config.thinking_config.thinking_level == types.ThinkingLevel.LOW
 
 
 class FakeClient:
@@ -96,12 +191,116 @@ def test_interpretation_cache_makes_exactly_one_gemini_call() -> None:
     assert calls == 1
 
 
-def test_interpretation_unavailable_raises_without_inventing_refinement(monkeypatch) -> None:
-    from app.assessment import gemini as gemini_module
+def test_suitability_profile_compaction_preserves_verified_relevant_detail() -> None:
+    profile = DataProfiler().profile(
+        pd.DataFrame(
+            {
+                "studytime": [1, 2, 3, 4],
+                "G3": [10, 12, 15, 18],
+                "unrelated_measurement": [100, 200, 300, 400],
+            }
+        ),
+        _interpretation(),
+        {"studytime": "weekly study time", "G3": "final grade"},
+    )
 
-    monkeypatch.setattr(gemini_module.settings, "gemini_api_key", None)
-    monkeypatch.setattr(gemini_module.settings, "google_api_key", None)
-    with pytest.raises(GeminiUnavailableError, match="GEMINI_API_KEY is not configured"):
+    compact = GeminiService._compact_profile(profile)
+    columns = {column["name"]: column for column in compact["columns"]}
+
+    assert compact["row_count"] == profile.row_count
+    assert "categorical_summary" in columns["studytime"]
+    assert "unrelated_measurement" not in columns
+    assert "unrelated_measurement" in compact["all_column_names"]
+
+
+def test_suitability_falls_back_after_transient_503(monkeypatch) -> None:
+    calls = []
+
+    def generate_content(**kwargs):
+        calls.append(kwargs["model"])
+        if len(calls) == 1:
+            raise RuntimeError("503 UNAVAILABLE")
+        return _assessment_response()
+
+    monkeypatch.setattr(settings, "gemini_model", "primary-model")
+    monkeypatch.setattr(settings, "gemini_fallback_model", "fallback-model")
+    monkeypatch.setattr(settings, "gemini_overall_timeout_ms", 20000)
+    monkeypatch.setattr(settings, "gemini_fallback_reserve_ms", 10000)
+    interpretation, dataset, profile = _suitability_inputs()
+    result = GeminiService(
+        SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+    ).assess_suitability("Does study time affect grades?", interpretation, dataset, profile)
+
+    assert result.criteria.required_variable_coverage.score == 80
+    assert calls == ["primary-model", "fallback-model"]
+
+
+def test_suitability_falls_back_after_transient_504_then_reports_failure(monkeypatch) -> None:
+    calls = []
+
+    def generate_content(**kwargs):
+        calls.append(kwargs["model"])
+        raise RuntimeError("504 DEADLINE_EXCEEDED")
+
+    monkeypatch.setattr(settings, "gemini_model", "primary-model")
+    monkeypatch.setattr(settings, "gemini_fallback_model", "fallback-model")
+    monkeypatch.setattr(settings, "gemini_overall_timeout_ms", 20000)
+    monkeypatch.setattr(settings, "gemini_fallback_reserve_ms", 10000)
+    interpretation, dataset, profile = _suitability_inputs()
+
+    with pytest.raises(GeminiUnavailableError) as error:
+        GeminiService(
+            SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+        ).assess_suitability("Does study time affect grades?", interpretation, dataset, profile)
+
+    assert error.value.category == "provider_http_504"
+    assert calls == ["primary-model", "fallback-model"]
+
+
+def test_suitability_does_not_fallback_on_quota_error(monkeypatch) -> None:
+    calls = []
+
+    def generate_content(**kwargs):
+        calls.append(kwargs["model"])
+        raise RuntimeError("429 RESOURCE_EXHAUSTED quota")
+
+    monkeypatch.setattr(settings, "gemini_model", "primary-model")
+    monkeypatch.setattr(settings, "gemini_fallback_model", "fallback-model")
+    interpretation, dataset, profile = _suitability_inputs()
+
+    with pytest.raises(GeminiUnavailableError) as error:
+        GeminiService(
+            SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+        ).assess_suitability("Does study time affect grades?", interpretation, dataset, profile)
+
+    assert error.value.category == "quota/rate limit (not retried)"
+    assert calls == ["primary-model"]
+
+
+def test_suitability_skips_fallback_when_remaining_deadline_is_below_provider_minimum(monkeypatch) -> None:
+    calls = []
+
+    def generate_content(**kwargs):
+        calls.append(kwargs["model"])
+        raise RuntimeError("503 UNAVAILABLE")
+
+    monkeypatch.setattr(settings, "gemini_model", "primary-model")
+    monkeypatch.setattr(settings, "gemini_fallback_model", "fallback-model")
+    monkeypatch.setattr(settings, "gemini_overall_timeout_ms", 16000)
+    monkeypatch.setattr(settings, "gemini_fallback_reserve_ms", 6000)
+    monkeypatch.setattr(settings, "gemini_provider_min_timeout_ms", 20000)
+    interpretation, dataset, profile = _suitability_inputs()
+
+    with pytest.raises(GeminiUnavailableError):
+        GeminiService(
+            SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
+        ).assess_suitability("Does study time affect grades?", interpretation, dataset, profile)
+
+    assert calls == ["primary-model"]
+
+
+def test_interpretation_unavailable_raises_without_inventing_refinement() -> None:
+    with pytest.raises(GeminiUnavailableError):
         GeminiService().interpret("How does pollution affect health?")
 
 

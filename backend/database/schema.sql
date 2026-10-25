@@ -7,7 +7,6 @@ CREATE TABLE research_queries (
     normalized_question TEXT NOT NULL,
     embedding VECTOR(384),
     embedding_model TEXT,
-    user_sub TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -62,11 +61,9 @@ CREATE TABLE dataset_profiles (
     dataset_id BIGINT REFERENCES datasets(id),
     source_version TEXT NOT NULL,
     profiler_version TEXT NOT NULL,
-    resource_key TEXT NOT NULL DEFAULT '',
     profile JSONB NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    CONSTRAINT dataset_profiles_resource_version_key
-        UNIQUE (dataset_id, resource_key, source_version, profiler_version)
+    UNIQUE(dataset_id, source_version, profiler_version)
 );
 
 -- 6. Question-specific assessments
@@ -85,10 +82,6 @@ CREATE TABLE research_assessments (
 
 CREATE INDEX idx_queries_created
 ON research_queries(created_at DESC);
-
-CREATE INDEX idx_queries_owner_created
-ON research_queries (user_sub, created_at DESC, id DESC)
-WHERE user_sub IS NOT NULL;
 
 CREATE INDEX idx_queries_embedding_model
 ON research_queries(embedding_model)

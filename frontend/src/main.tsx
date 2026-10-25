@@ -1,9 +1,8 @@
-import { StrictMode, useCallback } from "react";
+import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { Auth0Provider, useAuth0 } from "@auth0/auth0-react";
+import { Auth0Provider } from "@auth0/auth0-react";
+import { initializeTheme } from "./theme/theme";
 import AppEntry from "./AppEntry";
-import { fetchWithAccessToken, type AuthorizedFetch } from "./auth/api";
-import { auth0Audience, auth0ClientId, auth0Domain } from "./auth/config";
 import { AuthControls } from "./components/AuthControls";
 import "./styles/foundation.css";
 import "./styles/landing.css";
@@ -11,34 +10,22 @@ import "./styles/workspace.css";
 import "./styles/graph.css";
 import "./styles/analysis.css";
 
-function AuthenticatedEntry() {
-  const { getAccessTokenSilently, isAuthenticated, isLoading } = useAuth0();
-  const authorizedFetch = useCallback<AuthorizedFetch>((input, init) => {
-    return fetchWithAccessToken(
-      () => getAccessTokenSilently({ authorizationParams: { audience: auth0Audience } }),
-      input,
-      init,
-    );
-  }, [getAccessTokenSilently]);
-  return (
-    <AppEntry
-      authControls={<AuthControls />}
-      authorizedFetch={isAuthenticated && !isLoading ? authorizedFetch : undefined}
-    />
-  );
-}
+initializeTheme();
+document.documentElement.style.removeProperty("background-color");
+document.documentElement.style.removeProperty("color-scheme");
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <Auth0Provider
-      domain={auth0Domain}
-      clientId={auth0ClientId}
-      authorizationParams={{
-        redirect_uri: window.location.origin,
-        ...(auth0Audience ? { audience: auth0Audience } : {}),
+      domain="dev-cavt8qsoguvw8bjv.us.auth0.com"
+      clientId="HAeCwrM0uklvSub6tBLwcPOIsjVNKyAK"
+      authorizationParams={{ redirect_uri: window.location.origin }}
+      onRedirectCallback={() => {
+        window.history.replaceState(null, "", "/dashboard");
+        window.dispatchEvent(new PopStateEvent("popstate"));
       }}
     >
-      <AuthenticatedEntry />
+      <AppEntry authControls={<AuthControls />} />
     </Auth0Provider>
   </StrictMode>,
 );

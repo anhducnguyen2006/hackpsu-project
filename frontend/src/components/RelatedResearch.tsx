@@ -1,9 +1,7 @@
 import { useState } from "react";
-import type { AuthorizedFetch } from "../auth/api";
-import { protectedRequestError } from "../auth/api";
 import type { SimilarResearchItem } from "../types";
 
-export function RelatedResearch({ apiBase, authorizedFetch, question, onOpenResearch }: { apiBase?: string; authorizedFetch?: AuthorizedFetch; question: string; onOpenResearch?: (queryId: number) => void }) {
+export function RelatedResearch({ apiBase, question, onOpenResearch }: { apiBase?: string; question: string; onOpenResearch?: (queryId: number) => void }) {
   const [items, setItems] = useState<SimilarResearchItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -11,12 +9,11 @@ export function RelatedResearch({ apiBase, authorizedFetch, question, onOpenRese
 
   async function findRelated() {
     if (!apiBase) { setError("Related research is unavailable until the backend is connected."); setHasSearched(true); return; }
-    if (!authorizedFetch) { setError("Log in to compare this question with your saved research."); setHasSearched(true); return; }
     if (!question.trim()) { setError("Enter a research question to find related work."); setHasSearched(true); return; }
     setLoading(true); setError(""); setHasSearched(true);
     try {
-      const response = await authorizedFetch(`${apiBase}/api/v1/research/similar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ research_question: question.trim() }) });
-      if (!response.ok) throw new Error(protectedRequestError(response.status, "Related research could not be loaded right now."));
+      const response = await fetch(`${apiBase}/api/v1/research/similar`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ research_question: question.trim() }) });
+      if (!response.ok) throw new Error("Related research could not be loaded right now.");
       setItems((await response.json()) as SimilarResearchItem[]);
     } catch (cause) {
       setItems([]); setError(cause instanceof Error ? cause.message : "Related research could not be loaded right now.");
