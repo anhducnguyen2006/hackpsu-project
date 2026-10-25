@@ -18,6 +18,9 @@ class EmbeddingServiceError(RuntimeError):
 class EmbeddingService:
     """Lazy, process-local Sentence Transformers ranking for dataset metadata."""
 
+    # BAAI/bge-small-en-v1.5 produces 384-dimensional embeddings.
+    EMBEDDING_DIMENSIONS = 384
+
     def __init__(
         self,
         model_name: str = settings.embedding_model_name,
@@ -30,6 +33,16 @@ class EmbeddingService:
         self._model_lock = threading.Lock()
         self._embedding_cache: dict[tuple[str, str, str, str], np.ndarray] = {}
         self._dataset_cache_keys: dict[tuple[str, str], tuple[str, str, str, str]] = {}
+
+    @property
+    def model_identifier(self) -> str:
+        return f"{self.model_name}@{self.model_version}"
+
+    def embed_text(self, text: str) -> np.ndarray:
+        """Return one normalized local-model embedding for arbitrary text."""
+        if not text or not text.strip():
+            raise EmbeddingServiceError("Embedding text is empty.")
+        return self._normalize_rows(self._encode([text.strip()]))[0]
 
     def rank(
         self,

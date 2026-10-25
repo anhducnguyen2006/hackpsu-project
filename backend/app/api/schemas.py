@@ -19,6 +19,23 @@ class ResearchHistoryItem(BaseModel):
     created_at: datetime
 
 
+class SimilarResearchRequest(BaseModel):
+    research_question: str = Field(min_length=1, max_length=2000)
+
+
+class SimilarResearchItem(BaseModel):
+    id: int
+    question: str
+    normalized_question: str
+    created_at: datetime
+    similarity_score: float
+
+
+class ResearchSessionResponse(ResearchHistoryItem):
+    datasets: list[dict[str, Any]] = Field(default_factory=list)
+    assessments: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class ResearchInterpretation(BaseModel):
     original_research_question: str
     refined_question: str | None = None

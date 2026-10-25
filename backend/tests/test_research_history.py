@@ -52,6 +52,37 @@ def test_research_query_returns_timestamp(monkeypatch) -> None:
     assert response.json()["created_at"].endswith("Z")
 
 
+def test_research_session_returns_saved_matches_and_assessments(monkeypatch) -> None:
+    expected = {
+        **_query(7, "Does rainfall affect yield?"),
+        "datasets": [
+            {
+                "metadata": {"title": "Rainfall observations"},
+                "rank": 1,
+                "relevance_score": 0.9,
+                "explanation": "Verified match.",
+            }
+        ],
+        "assessments": [
+            {
+                "dataset_id": 3,
+                "model": "gemini",
+                "assessment_version": "v1",
+                "assessment": {"overall_assessment": "Useful"},
+                "suitability_score": 80,
+                "created_at": datetime(2026, 10, 25, tzinfo=timezone.utc),
+            }
+        ],
+    }
+    monkeypatch.setattr(research_route, "get_research_session", lambda query_id: expected)
+
+    response = TestClient(app).get("/api/v1/research/7/session")
+
+    assert response.status_code == 200
+    assert response.json()["datasets"][0]["metadata"]["title"] == "Rainfall observations"
+    assert response.json()["assessments"][0]["suitability_score"] == 80
+
+
 class FakeConnection:
     def __init__(self, rows: list[tuple]) -> None:
         self.rows = rows

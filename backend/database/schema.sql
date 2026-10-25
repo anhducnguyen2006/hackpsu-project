@@ -61,6 +61,15 @@ CREATE TABLE research_assessments (
 CREATE INDEX idx_queries_created
 ON research_queries(created_at DESC);
 
+CREATE INDEX idx_queries_embedding_model
+ON research_queries(embedding_model)
+WHERE embedding IS NOT NULL;
+
+CREATE INDEX idx_queries_embedding_cosine
+ON research_queries
+USING hnsw (embedding vector_cosine_ops)
+WHERE embedding IS NOT NULL;
+
 CREATE INDEX idx_assessments_query
 ON research_assessments(query_id);
 

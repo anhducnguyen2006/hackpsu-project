@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
+import { RelatedResearch } from "./RelatedResearch";
 
-export function ResearchQuestion({ exampleQuestion, onExploreExample, onSearch }: { exampleQuestion: string; onExploreExample: () => void; onSearch?: (question: string) => Promise<void> | void }) {
+export function ResearchQuestion({ exampleQuestion, onExploreExample, onSearch, apiBase, onOpenResearch }: { exampleQuestion: string; onExploreExample: () => void; onSearch?: (question: string) => Promise<void> | void; apiBase?: string; onOpenResearch?: (queryId: number) => void }) {
   const [question, setQuestion] = useState("");
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
@@ -25,6 +26,7 @@ export function ResearchQuestion({ exampleQuestion, onExploreExample, onSearch }
           {status && <p role="status" className="form-status">{status}</p>}
         </form>
         <div className="example-callout"><span className="data-label">Cached example question</span><p>{exampleQuestion}</p><button className="secondary-action" type="button" onClick={onExploreExample}>Explore the example</button></div>
+        <RelatedResearch apiBase={apiBase} question={question} onOpenResearch={onOpenResearch} />
       </div>
       <aside className="workflow-panel" aria-label="Illustrative workflow">
         <div className="workflow-header"><span className="eyebrow">Fig. 01 / Method</span><strong>Illustrative workflow</strong></div>

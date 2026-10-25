@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
 from psycopg.types.json import Jsonb
 
 from app.api.schemas import DataProfile, DatasetRecord, DatasetResult, ResearchAssessment
@@ -9,6 +10,35 @@ from database.connection import get_connection
 
 
 ResearchQuery = dict[str, Any]
+
+
+def _vector_literal(embedding: Any) -> str:
+    values = np.asarray(embedding, dtype=np.float32)
+    if values.ndim != 1 or values.size == 0 or not np.isfinite(values).all():
+        raise ValueError("Embedding must be a finite one-dimensional vector")
+    return "[" + ",".join(format(float(value), ".9g") for value in values) + "]"
+
+
+def _question_embedding(
+    normalized_question: str, embedding_service: Any | None
+) -> tuple[str | None, str | None]:
+    if embedding_service is None:
+        return None, None
+    try:
+        embedding = embedding_service.embed_text(normalized_question)
+        values = np.asarray(embedding, dtype=np.float32)
+        expected_dimensions = getattr(
+            embedding_service, "EMBEDDING_DIMENSIONS", values.size
+        )
+        if values.size != expected_dimensions:
+            raise ValueError(
+                f"Embedding dimension {values.size} does not match {expected_dimensions}"
+            )
+        return _vector_literal(values), str(embedding_service.model_identifier)
+    except Exception:
+        # Research persistence remains available when the optional local model
+        # cannot be loaded; the row can be filled by the idempotent backfill.
+        return None, None
 
 
 def _row_to_query(row: tuple[Any, ...]) -> ResearchQuery:
@@ -21,24 +51,40 @@ def _row_to_query(row: tuple[Any, ...]) -> ResearchQuery:
 
 
 def save_research_question(
-    question: str, normalized_question: str | None = None
+    question: str,
+    normalized_question: str | None = None,
+    embedding_service: Any | None = None,
 ) -> ResearchQuery:
     """Persist one research question using the shared database connection pool."""
     # The existing schema requires normalized_question. When no normalized form is
     # available, retaining the original question is the lossless fallback.
     stored_normalized_question = normalized_question or question
+    embedding, embedding_model = _question_embedding(
+        stored_normalized_question, embedding_service
+    )
 
     connection = None
     try:
         with get_connection() as connection:
-            row = connection.execute(
-                """
-                INSERT INTO research_queries (question, normalized_question)
-                VALUES (%s, %s)
-                RETURNING id, question, normalized_question, created_at
-                """,
-                (question, stored_normalized_question),
-            ).fetchone()
+            if embedding is None:
+                row = connection.execute(
+                    """
+                    INSERT INTO research_queries (question, normalized_question)
+                    VALUES (%s, %s)
+                    RETURNING id, question, normalized_question, created_at
+                    """,
+                    (question, stored_normalized_question),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    """
+                    INSERT INTO research_queries
+                        (question, normalized_question, embedding, embedding_model)
+                    VALUES (%s, %s, %s::vector, %s)
+                    RETURNING id, question, normalized_question, created_at
+                    """,
+                    (question, stored_normalized_question, embedding, embedding_model),
+                ).fetchone()
             if row is None:
                 raise RuntimeError("The research query insert returned no row")
             connection.commit()
@@ -81,6 +127,63 @@ def get_research_question(query_id: int) -> ResearchQuery | None:
             (query_id,),
         ).fetchone()
         return None if row is None else _row_to_query(row)
+
+
+def get_research_session(query_id: int) -> ResearchQuery | None:
+    """Return a saved query with only persisted matches and linked assessments."""
+    with get_connection() as connection:
+        query_row = connection.execute(
+            """
+            SELECT id, question, normalized_question, created_at
+            FROM research_queries
+            WHERE id = %s
+            """,
+            (query_id,),
+        ).fetchone()
+        if query_row is None:
+            return None
+        match_rows = connection.execute(
+            """
+            SELECT d.metadata, m.rank, m.relevance_score, m.explanation
+            FROM query_dataset_matches AS m
+            JOIN datasets AS d ON d.id = m.dataset_id
+            WHERE m.query_id = %s
+            ORDER BY m.rank NULLS LAST, d.id
+            """,
+            (query_id,),
+        ).fetchall()
+        assessment_rows = connection.execute(
+            """
+            SELECT dataset_id, model, assessment_version, assessment,
+                   suitability_score, created_at
+            FROM research_assessments
+            WHERE query_id = %s
+            ORDER BY created_at DESC, id DESC
+            """,
+            (query_id,),
+        ).fetchall()
+        result = _row_to_query(query_row)
+        result["datasets"] = [
+            {
+                "metadata": row[0],
+                "rank": row[1],
+                "relevance_score": row[2],
+                "explanation": row[3],
+            }
+            for row in match_rows
+        ]
+        result["assessments"] = [
+            {
+                "dataset_id": row[0],
+                "model": row[1],
+                "assessment_version": row[2],
+                "assessment": row[3],
+                "suitability_score": row[4],
+                "created_at": row[5],
+            }
+            for row in assessment_rows
+        ]
+        return result
 
 
 PersistableDataset = DatasetRecord | DatasetResult
@@ -211,19 +314,35 @@ def persist_discovery_result(
     question: str,
     normalized_question: str | None,
     datasets: list[DatasetResult],
+    embedding_service: Any | None = None,
 ) -> int:
     """Atomically persist a live discovery query, datasets, and relationships."""
     connection = None
     try:
         with get_connection() as connection:
-            query_row = connection.execute(
-                """
-                INSERT INTO research_queries (question, normalized_question)
-                VALUES (%s, %s)
-                RETURNING id
-                """,
-                (question, normalized_question or question),
-            ).fetchone()
+            stored_normalized_question = normalized_question or question
+            embedding, embedding_model = _question_embedding(
+                stored_normalized_question, embedding_service
+            )
+            if embedding is None:
+                query_row = connection.execute(
+                    """
+                    INSERT INTO research_queries (question, normalized_question)
+                    VALUES (%s, %s)
+                    RETURNING id
+                    """,
+                    (question, stored_normalized_question),
+                ).fetchone()
+            else:
+                query_row = connection.execute(
+                    """
+                    INSERT INTO research_queries
+                        (question, normalized_question, embedding, embedding_model)
+                    VALUES (%s, %s, %s::vector, %s)
+                    RETURNING id
+                    """,
+                    (question, stored_normalized_question, embedding, embedding_model),
+                ).fetchone()
             if query_row is None:
                 raise RuntimeError("The discovery query insert returned no ID")
             query_id = int(query_row[0])
@@ -255,6 +374,39 @@ def persist_discovery_result(
             except Exception:
                 pass
         raise
+
+
+def find_similar_research_questions(
+    embedding: Any, embedding_model: str, limit: int = 5
+) -> list[ResearchQuery]:
+    """Find top exact-model matches using pgvector cosine distance."""
+    if limit <= 0:
+        return []
+    vector = _vector_literal(embedding)
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                id,
+                question,
+                normalized_question,
+                created_at,
+                1 - (embedding <=> %s::vector) AS similarity_score
+            FROM research_queries
+            WHERE embedding IS NOT NULL
+              AND embedding_model = %s
+            ORDER BY embedding <=> %s::vector
+            LIMIT %s
+            """,
+            (vector, embedding_model, vector, min(limit, 5)),
+        ).fetchall()
+        return [
+            {
+                **_row_to_query(row[:4]),
+                "similarity_score": float(row[4]),
+            }
+            for row in rows
+        ]
 
 
 def get_dataset_profile(

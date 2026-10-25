@@ -54,6 +54,7 @@ def search(request: DiscoveryRequest) -> DiscoveryResponse:
                 interpretation.refined_question if interpretation else None
             ),
             datasets=datasets,
+            embedding_service=getattr(service, "embedding_service", None),
         )
     except Exception:
         logger.warning(

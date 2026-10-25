@@ -36,6 +36,7 @@ def _dataset() -> schemas.DatasetResult:
 class FakeDiscoveryService:
     def __init__(self, datasets: list[schemas.DatasetResult]) -> None:
         self.datasets = datasets
+        self.embedding_service = object()
 
     def search_with_status(self, question: str, limit: int):
         return _interpretation(), self.datasets[:limit], [], "gemini", "semantic_embeddings"
