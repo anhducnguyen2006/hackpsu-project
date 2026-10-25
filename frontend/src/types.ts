@@ -8,6 +8,7 @@ export interface DatasetCardData {
   repository_url: string;
   subject_area: string | null;
   variables: string[];
+  variable_descriptions?: Record<string, string>;
   instance_count: number | null;
   feature_count: number | null;
   data_available: boolean | null;
@@ -15,6 +16,9 @@ export interface DatasetCardData {
   preliminary_relevance_score: number | null;
   relevance_explanation: string;
   score_confidence: "low" | "medium" | "high";
+  matched_research_variables?: string[];
+  missing_or_unverified_variables?: string[];
+  classification?: "relevant" | "partially_relevant" | "irrelevant";
 }
 
 export interface ResearchInterpretation {
