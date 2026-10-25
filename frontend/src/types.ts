@@ -66,6 +66,30 @@ export interface DiscoveryResponse {
   ranking_status?: "semantic_embeddings" | "keyword_fallback" | "unavailable" | "demo_cached";
 }
 
+export type GraphNodeType = "DATASET" | "VARIABLE" | "GEOGRAPHY" | "TIME_PERIOD" | "RESEARCH_CONCEPT";
+
+export interface DatasetGraphNodeData {
+  id: string;
+  type: GraphNodeType | string;
+  label: string;
+  source?: string;
+  concept_type?: string;
+}
+
+export interface DatasetGraphEdgeData {
+  id: string;
+  source: string;
+  target: string;
+  relationship_type: string;
+  evidence: string;
+  verification_status: string;
+}
+
+export interface DatasetGraphResponse {
+  nodes: { data: DatasetGraphNodeData }[];
+  edges: { data: DatasetGraphEdgeData }[];
+}
+
 export interface NumericSummary {
   count: number;
   mean: number | null;

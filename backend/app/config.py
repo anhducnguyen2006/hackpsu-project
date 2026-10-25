@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     embedding_model_name: str = "BAAI/bge-small-en-v1.5"
     embedding_model_version: str = "1"
     embedding_top_k: int = 12
+    graph_candidate_limit: int = 12
+    graph_max_nodes: int = 250
+    graph_max_edges: int = 600
     dataverse_enabled: bool = True
     dataverse_api_url: str = "https://dataverse.harvard.edu/api/search"
     dataverse_results_limit: int = 5

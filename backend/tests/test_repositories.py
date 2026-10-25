@@ -167,6 +167,31 @@ def test_zenodo_skips_non_dataset_and_handles_rate_limits() -> None:
         )
 
 
+def test_zenodo_accepts_current_self_html_landing_link() -> None:
+    client = FakeClient(
+        FakeResponse(
+            {
+                "hits": {
+                    "hits": [
+                        {
+                            "id": 67890,
+                            "links": {"self_html": "https://zenodo.org/records/67890"},
+                            "metadata": {
+                                "resource_type": {"type": "dataset"},
+                                "title": "Rainfall observations",
+                            },
+                        }
+                    ]
+                }
+            }
+        )
+    )
+
+    records = ZenodoService(client=client).search(["rainfall"])
+
+    assert str(records[0].landing_page_url) == "https://zenodo.org/records/67890"
+
+
 def _interpretation() -> ResearchInterpretation:
     return ResearchInterpretation(
         original_research_question="Does rainfall affect crop yield?",

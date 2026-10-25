@@ -242,6 +242,24 @@ class DiscoveryResponse(BaseModel):
     ] = "unavailable"
 
 
+class DiscoveryGraphRequest(BaseModel):
+    research_question: str = Field(min_length=10, max_length=2000)
+    limit: int = Field(default=8, ge=1, le=25)
+
+
+class GraphNode(BaseModel):
+    data: dict[str, Any]
+
+
+class GraphEdge(BaseModel):
+    data: dict[str, Any]
+
+
+class KnowledgeGraphResponse(BaseModel):
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+
+
 class AnalysisRequest(BaseModel):
     research_question: str = Field(min_length=10, max_length=2000)
 

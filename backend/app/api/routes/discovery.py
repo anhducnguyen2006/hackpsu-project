@@ -3,7 +3,7 @@ import time
 
 from fastapi import APIRouter
 
-from app.api.schemas import DiscoveryRequest, DiscoveryResponse
+from app.api.schemas import DiscoveryGraphRequest, DiscoveryRequest, DiscoveryResponse, KnowledgeGraphResponse
 from app.assessment.gemini import GeminiService
 from app.config import settings
 from app.demo import demo_search
@@ -68,3 +68,11 @@ def search(request: DiscoveryRequest) -> DiscoveryResponse:
         response.processing_mode,
     )
     return response
+
+
+@router.post("/graph", response_model=KnowledgeGraphResponse)
+def graph(request: DiscoveryGraphRequest) -> KnowledgeGraphResponse:
+    """Build a graph from this process's cached normalized search records."""
+    if settings.demo_mode:
+        return KnowledgeGraphResponse(nodes=[], edges=[])
+    return service.graph_for_search(request.research_question, request.limit)

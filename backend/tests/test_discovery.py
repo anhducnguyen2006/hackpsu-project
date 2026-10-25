@@ -97,6 +97,16 @@ def test_gemini_failure_uses_labeled_fallback() -> None:
     assert mode == "keyword_fallback"
 
 
+def test_fallback_interpretation_preserves_affect_and_geography_structure() -> None:
+    interpretation = DiscoveryService._fallback_interpretation(
+        "How does rainfall affect crop production in Nepal?"
+    )
+
+    assert interpretation.independent_variables == ["rainfall"]
+    assert interpretation.dependent_variables == ["crop production"]
+    assert interpretation.target_population == "Nepal"
+
+
 def test_repository_failure_returns_empty_results() -> None:
     class BrokenRepository:
         def discover_catalog(self):

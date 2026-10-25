@@ -21,6 +21,7 @@ from app.discovery.dataverse import HarvardDataverseService
 from app.discovery.embeddings import EmbeddingService
 from app.discovery.uci import dataset_record_from_uci
 from app.discovery.zenodo import ZenodoService
+from app.graph.service import DatasetKnowledgeGraph
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,28 @@ class DiscoveryService:
         self.providers = list(providers or [])
         self.embedding_service = embedding_service or EmbeddingService()
         self._cache: dict[tuple[str, int], tuple[float, tuple]] = {}
+        self._graph_records: dict[tuple[str, int], tuple[float, ResearchInterpretation | None, tuple[DatasetRecord, ...]]] = {}
         self.cache_ttl_seconds = 300
+
+    def graph_for_search(self, question: str, limit: int):
+        """Return a graph for server-cached normalized records, populating the cache via search if needed."""
+        cache_key = (question.strip().lower(), limit)
+        cached = self._graph_records.get(cache_key)
+        if not cached or time.monotonic() - cached[0] >= self.cache_ttl_seconds:
+            self.search_with_status(question, limit)
+            cached = self._graph_records.get(cache_key)
+        if not cached:
+            return DatasetKnowledgeGraph(
+                max_datasets=settings.graph_candidate_limit,
+                max_nodes=settings.graph_max_nodes,
+                max_edges=settings.graph_max_edges,
+            ).build([], None)
+        _, interpretation, records = cached
+        return DatasetKnowledgeGraph(
+            max_datasets=settings.graph_candidate_limit,
+            max_nodes=settings.graph_max_nodes,
+            max_edges=settings.graph_max_edges,
+        ).build(records, interpretation)
 
     def search(
         self, question: str, limit: int
@@ -158,6 +180,7 @@ class DiscoveryService:
                 "keyword_fallback" if interpretation_failed else "unavailable",
             )
             self._cache[cache_key] = (time.monotonic(), response)
+            self._graph_records[cache_key] = (time.monotonic(), interpretation, tuple())
             return response
 
         try:
@@ -183,6 +206,9 @@ class DiscoveryService:
                 "semantic_embeddings",
             )
             self._cache[cache_key] = (time.monotonic(), response)
+            self._graph_records[cache_key] = (
+                time.monotonic(), interpretation, tuple(record for record, _ in ranked[:limit])
+            )
             logger.info("discovery stage=response elapsed_ms=%.1f", (time.perf_counter() - started) * 1000)
             return response
         except Exception as error:
@@ -198,6 +224,7 @@ class DiscoveryService:
                 "keyword_fallback",
             )
             self._cache[cache_key] = (time.monotonic(), response)
+            self._graph_records[cache_key] = (time.monotonic(), interpretation, tuple(records[:limit]))
             logger.info("discovery stage=response_fallback elapsed_ms=%.1f", (time.perf_counter() - started) * 1000)
             return response
 
@@ -597,6 +624,32 @@ class DiscoveryService:
 
     @staticmethod
     def _fallback_interpretation(question: str) -> ResearchInterpretation:
+        structured = re.search(
+            r"(?:how\s+does|does)\s+(?P<independent>.+?)\s+affect\s+"
+            r"(?P<dependent>.+?)(?:\s+(?:in|among|for)\s+(?P<population>[^?.!]+))?[?.!]?$",
+            question.strip(),
+            re.IGNORECASE,
+        )
+        if structured:
+            independent = structured.group("independent").strip(" ,")
+            dependent = structured.group("dependent").strip(" ,")
+            population = (structured.group("population") or "").strip(" ,") or None
+            terms = list(dict.fromkeys(
+                re.findall(r"[a-zA-Z][a-zA-Z-]{2,}", " ".join(
+                    part for part in (independent, dependent, population or "") if part
+                ).lower())
+            ))[:5]
+            while len(terms) < 3:
+                terms.append("research")
+            return ResearchInterpretation(
+                original_research_question=question,
+                research_subject=dependent or independent,
+                independent_variables=[independent] if independent else [],
+                dependent_variables=[dependent] if dependent else [],
+                target_population=population,
+                synonyms=[],
+                search_terms=terms,
+            )
         words = re.findall(r"[a-zA-Z][a-zA-Z-]{2,}", question.lower())
         fallback_stop_words = STOP_WORDS | {
             "datasets",

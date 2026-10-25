@@ -96,7 +96,7 @@ class ZenodoService:
         if not source_id or not title:
             raise ValueError("record has no stable ID or title")
         links = item.get("links") if isinstance(item.get("links"), dict) else {}
-        landing_page_url = cls._text(links.get("html"))
+        landing_page_url = cls._text(links.get("html") or links.get("self_html"))
         if landing_page_url is None:
             raise ValueError("record has no verified landing page URL")
         resources = cls._resources(item.get("files"))
