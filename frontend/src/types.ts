@@ -195,6 +195,7 @@ export interface ColumnProfile {
 export interface DataProfile {
   row_count: number;
   column_count: number;
+  profiled_column_count?: number | null;
   column_names: string[];
   duplicate_row_count: number;
   columns: ColumnProfile[];

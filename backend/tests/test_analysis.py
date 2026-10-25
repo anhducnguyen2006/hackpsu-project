@@ -154,6 +154,18 @@ def test_profile_preserves_declared_categorical_measurement() -> None:
     assert all(column.numeric_summary is None for column in profile.columns)
 
 
+def test_profile_can_focus_on_selected_columns() -> None:
+    profile = DataProfiler().profile(
+        pd.DataFrame({"age": [45, 52], "blood_pressure": [120, 130]}),
+        profile_columns=["blood_pressure"],
+    )
+
+    assert profile.column_count == 2
+    assert profile.profiled_column_count == 1
+    assert profile.column_names == ["age", "blood_pressure"]
+    assert [column.name for column in profile.columns] == ["blood_pressure"]
+
+
 def test_analysis_is_cached_and_score_is_python_recomputed() -> None:
     repository = FakeRepository()
     gemini = FakeGemini()

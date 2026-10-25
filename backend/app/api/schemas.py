@@ -402,6 +402,7 @@ class ResearchVariableEvidence(BaseModel):
 class DataProfile(BaseModel):
     row_count: int
     column_count: int
+    profiled_column_count: int | None = None
     column_names: list[str]
     duplicate_row_count: int
     columns: list[ColumnProfile]

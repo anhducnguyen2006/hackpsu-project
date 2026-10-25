@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     database_url: str | None = None
     gemini_api_key: str | None = None
     google_api_key: str | None = None
+    auth0_domain: str | None = None
+    auth0_audience: str | None = None
     gemini_model: str = "gemini-2.5-flash"
     gemini_interpret_thinking_level: str = "low"
     backend_cors_origins: str = "http://localhost:5173"

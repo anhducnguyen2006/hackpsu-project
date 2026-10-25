@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -174,7 +175,19 @@ class DatasetAnalysisService:
         warnings: list[str],
     ) -> tuple[DataProfile, int | None]:
         dataset_database_id: int | None = None
-        profile_cache_key = (numeric_id, source_version, self.profiler.PROFILER_VERSION)
+        profile_columns = self._profile_columns(
+            dataframe,
+            interpretation,
+            variable_descriptions,
+            variable_types,
+        )
+        profile_version = self.profiler.PROFILER_VERSION
+        if profile_columns is not None:
+            selection_digest = hashlib.sha256(
+                json.dumps(profile_columns, separators=(",", ":")).encode("utf-8")
+            ).hexdigest()[:12]
+            profile_version = f"{profile_version}:{selection_digest}"
+        profile_cache_key = (numeric_id, source_version, profile_version)
         cached_memory_profile = self._profile_cache.get(profile_cache_key)
         if cached_memory_profile is not None:
             timed_log(logger, "profile_cache", time.perf_counter(), status="memory_cache_hit", dataset_id=numeric_id)
@@ -186,7 +199,7 @@ class DatasetAnalysisService:
             cached_profile = get_dataset_profile(
                 dataset_database_id,
                 source_version,
-                self.profiler.PROFILER_VERSION,
+                profile_version,
             )
             timed_log(
                 logger,
@@ -228,7 +241,18 @@ class DatasetAnalysisService:
 
         logger.info("dataset_profile_cache event=miss dataset_id=%s", numeric_id)
         profile_started = time.perf_counter()
-        profile = self.profiler.profile(dataframe, interpretation, variable_descriptions, variable_types)
+        profile = self.profiler.profile(
+            dataframe,
+            interpretation,
+            variable_descriptions,
+            variable_types,
+            profile_columns,
+        )
+        if profile_columns is not None:
+            warnings.append(
+                f"Wide dataset: profiled {len(profile.columns)} research-relevant "
+                f"columns out of {len(dataframe.columns)} total columns."
+            )
         timed_log(
             logger,
             "pandas_numpy_profiling",
@@ -253,7 +277,7 @@ class DatasetAnalysisService:
                 save_dataset_profile(
                     dataset_database_id,
                     source_version,
-                    self.profiler.PROFILER_VERSION,
+                    profile_version,
                     validated_profile,
                 )
             except Exception:
@@ -266,6 +290,48 @@ class DatasetAnalysisService:
                 )
         self._profile_cache[profile_cache_key] = (profile, dataset_database_id)
         return profile, dataset_database_id
+
+    @staticmethod
+    def _profile_columns(
+        dataframe: pd.DataFrame,
+        interpretation: ResearchInterpretation | None,
+        variable_descriptions: dict[str, str],
+        variable_types: dict[str, str],
+    ) -> list[str] | None:
+        """Select research-relevant columns only for unusually wide datasets."""
+        if len(dataframe.columns) <= 500 or interpretation is None:
+            return None
+        terms = set(
+            re.findall(
+                r"[a-z0-9][a-z0-9-]{2,}",
+                " ".join(
+                    [
+                        interpretation.research_subject,
+                        *interpretation.independent_variables,
+                        *interpretation.dependent_variables,
+                        *interpretation.synonyms,
+                        *interpretation.search_terms,
+                    ]
+                ).lower(),
+            )
+        )
+        stop_words = {"the", "and", "with", "from", "for", "that", "this"}
+        terms -= stop_words
+        selected: list[str] = []
+        for name in dataframe.columns:
+            text = f"{name} {variable_descriptions.get(str(name), '')}".lower()
+            column_terms = set(re.findall(r"[a-z0-9][a-z0-9-]{2,}", text))
+            if terms & column_terms:
+                selected.append(name)
+        if not selected:
+            selected = [
+                name
+                for name in dataframe.columns
+                if variable_types.get(str(name), "").strip().lower()
+                in {"binary", "categorical"}
+                or not pd.api.types.is_numeric_dtype(dataframe[name])
+            ][:50]
+        return selected
 
     def _cached_or_assess(
         self,
@@ -455,12 +521,14 @@ class DatasetAnalysisService:
     def _interpret(
         self, question: str, warnings: list[str]
     ) -> ResearchInterpretation | None:
-        # Gemini interpretation is intentionally disabled for the research question.
-        # try:
-        #     return self.gemini.interpret(question)
-        # except Exception as error:
-        #     warnings.append(f"AI interpretation unavailable: {self._safe(error)}")
-        return DiscoveryService._fallback_interpretation(question)
+        try:
+            return self.gemini.interpret(question)
+        except Exception as error:
+            warnings.append(
+                f"Gemini interpretation unavailable; used deterministic fallback: "
+                f"{self._safe(error)}"
+            )
+            return DiscoveryService._fallback_interpretation(question)
 
     @staticmethod
     def _parse_id(dataset_id: str) -> int:

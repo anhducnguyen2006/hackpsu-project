@@ -21,7 +21,7 @@ class DataProfiler:
     """Deterministic Pandas/NumPy profiling with conservative measurement labels."""
 
     # Bump when the profile algorithm or its serialized shape changes.
-    PROFILER_VERSION = "data-profiler-v4"
+    PROFILER_VERSION = "data-profiler-v5"
 
     def profile(
         self,
@@ -29,19 +29,26 @@ class DataProfiler:
         interpretation: ResearchInterpretation | None = None,
         variable_descriptions: dict[str, str] | None = None,
         variable_types: dict[str, str] | None = None,
+        profile_columns: list[str] | None = None,
     ) -> DataProfile:
         descriptions = variable_descriptions or {}
         types = variable_types or {}
+        selected_names = (
+            [name for name in profile_columns if name in dataframe.columns]
+            if profile_columns is not None
+            else list(dataframe.columns)
+        )
+        profiled_dataframe = dataframe.loc[:, selected_names]
         columns = [
             self._column_profile(
-                dataframe[name],
+                profiled_dataframe[name],
                 descriptions.get(str(name)),
                 types.get(str(name)),
             )
-            for name in dataframe.columns
+            for name in selected_names
         ]
         evidence = (
-            self._research_evidence(dataframe, interpretation, descriptions)
+            self._research_evidence(profiled_dataframe, interpretation, descriptions)
             if interpretation
             else []
         )
@@ -68,12 +75,17 @@ class DataProfiler:
         )
         if len(dataframe) != len(dataframe.drop_duplicates()):
             flags.append("Duplicate rows are present; row count may overstate unique records.")
+        if profile_columns is not None and len(selected_names) < len(dataframe.columns):
+            flags.append(
+                f"Focused profile includes {len(selected_names)} of {len(dataframe.columns)} dataset columns selected from the research question and metadata."
+            )
         flags.append(
             "Row count is not necessarily the number of independent participants."
         )
         return DataProfile(
             row_count=int(len(dataframe)),
             column_count=int(len(dataframe.columns)),
+            profiled_column_count=len(selected_names),
             column_names=[str(name) for name in dataframe.columns],
             duplicate_row_count=int(dataframe.duplicated().sum()),
             columns=columns,

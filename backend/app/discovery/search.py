@@ -135,19 +135,17 @@ class DiscoveryService:
             logger.info("discovery stage=cache_hit elapsed_ms=%.1f", (time.perf_counter() - started) * 1000)
             return cached[1]
         warnings: list[str] = []
-        interpretation_failed = True
+        interpretation_failed = False
         stage_started = time.perf_counter()
-        # Gemini interpretation is intentionally disabled. Keep the call commented
-        # out so discovery always uses the deterministic, local interpretation.
-        # try:
-        #     interpretation = self.gemini.interpret(question)
-        # except Exception as error:
-        #     interpretation = self._fallback_interpretation(question)
-        #     warnings.append(
-        #         f"Gemini unavailable; used deterministic interpretation fallback: "
-        #         f"{self._safe_error(error)}"
-        #     )
-        interpretation = self._fallback_interpretation(question)
+        try:
+            interpretation = self.gemini.interpret(question)
+        except Exception as error:
+            interpretation = self._fallback_interpretation(question)
+            interpretation_failed = True
+            warnings.append(
+                f"Gemini unavailable; used deterministic interpretation fallback: "
+                f"{self._safe_error(error)}"
+            )
         logger.info("discovery stage=interpretation elapsed_ms=%.1f", (time.perf_counter() - stage_started) * 1000)
 
         stage_started = time.perf_counter()

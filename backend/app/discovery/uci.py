@@ -49,6 +49,9 @@ def dataset_record_from_uci(record: UCIRecord) -> DatasetRecord:
 class UCIRepositoryService:
     """Structured UCI catalog and dataset access, without parsing CLI output."""
 
+    MAX_INSTANCES = 100_000
+    MAX_FEATURES = 5_000
+    MAX_CELLS = 5_000_000
     catalog_url = "https://archive.ics.uci.edu/api/datasets/list"
     metadata_url = "https://archive.ics.uci.edu/api/dataset"
     source = "UCI Machine Learning Repository"
@@ -122,13 +125,17 @@ class UCIRepositoryService:
         metadata_record = metadata_record or self.get_metadata(dataset_id)
         if (
             metadata_record.instance_count is not None
-            and metadata_record.instance_count > 100_000
+            and metadata_record.instance_count > self.MAX_INSTANCES
         ) or (
             metadata_record.feature_count is not None
-            and metadata_record.feature_count > 500
+            and metadata_record.feature_count > self.MAX_FEATURES
+        ) or (
+            metadata_record.instance_count is not None
+            and metadata_record.feature_count is not None
+            and metadata_record.instance_count * metadata_record.feature_count > self.MAX_CELLS
         ):
             raise UCIRepositoryError(
-                f"UCI dataset {dataset_id} exceeds supported metadata size limits."
+                f"UCI dataset {dataset_id} exceeds supported download size limits."
             )
         try:
             from ucimlrepo import fetch_ucirepo
@@ -161,9 +168,13 @@ class UCIRepositoryService:
                 f"Unable to fetch UCI dataset {dataset_id}: {error}"
             ) from error
         record = self._record_from_metadata(metadata)
-        if len(dataframe) > 100_000 or len(dataframe.columns) > 500:
+        if (
+            len(dataframe) > self.MAX_INSTANCES
+            or len(dataframe.columns) > self.MAX_FEATURES
+            or len(dataframe) * len(dataframe.columns) > self.MAX_CELLS
+        ):
             raise UCIRepositoryError(
-                f"UCI dataset {dataset_id} exceeds the supported tabular size limits."
+                f"UCI dataset {dataset_id} exceeds the supported download size limits."
             )
         return record, dataframe, metadata
 
