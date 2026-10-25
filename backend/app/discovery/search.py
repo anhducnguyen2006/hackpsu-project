@@ -443,6 +443,7 @@ class DiscoveryService:
                 DatasetResult(
                     **DiscoveryService._legacy_record(record).model_dump(),
                     source=record.source,
+                    **DiscoveryService._normalized_result_fields(record),
                     data_status="available" if record.data_available else "metadata_only",
                     preliminary_relevance_score=score,
                     relevance_explanation=(
@@ -481,6 +482,7 @@ class DiscoveryService:
         return DatasetResult(
             **DiscoveryService._legacy_record(record).model_dump(),
             source=record.source,
+            **DiscoveryService._normalized_result_fields(record),
             data_status="available" if record.data_available else "metadata_only",
             **assessment.model_copy(
                 update={"relevance_explanation": explanation}
@@ -494,6 +496,7 @@ class DiscoveryService:
         return DatasetResult(
             **DiscoveryService._legacy_record(record).model_dump(),
             source=record.source,
+            **DiscoveryService._normalized_result_fields(record),
             data_status="available" if record.data_available else "metadata_only",
             semantic_similarity_score=score,
             score_type="semantic_similarity",
@@ -528,6 +531,19 @@ class DiscoveryService:
             variable_descriptions=descriptions,
             data_available=record.data_available,
         )
+
+    @staticmethod
+    def _normalized_result_fields(record: DatasetRecord) -> dict:
+        return {
+            "source_id": record.source_id,
+            "landing_page_url": record.landing_page_url,
+            "download_resources": record.download_resources,
+            "subjects": record.subjects,
+            "geographic_coverage": record.geographic_coverage,
+            "temporal_coverage": record.temporal_coverage,
+            "doi": record.doi,
+            "license": record.license,
+        }
 
     @staticmethod
     def _record_tokens(record: DatasetRecord) -> set[str]:

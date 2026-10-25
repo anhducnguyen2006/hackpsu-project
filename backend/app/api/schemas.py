@@ -209,6 +209,14 @@ class ConceptMatch(BaseModel):
 
 class DatasetResult(UCIRecord):
     source: str = "UCI Machine Learning Repository"
+    source_id: str | None = None
+    landing_page_url: HttpUrl | None = None
+    download_resources: list[DownloadResource] = Field(default_factory=list)
+    subjects: list[str] = Field(default_factory=list)
+    geographic_coverage: list[str] = Field(default_factory=list)
+    temporal_coverage: list[str] = Field(default_factory=list)
+    doi: str | None = None
+    license: str | None = None
     data_status: Literal["metadata_only", "available", "failed", "analyzed"]
     preliminary_relevance_score: int | None = Field(default=None, ge=0, le=100)
     semantic_similarity_score: float | None = Field(default=None, ge=-1, le=1)

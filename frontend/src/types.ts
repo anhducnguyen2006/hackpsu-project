@@ -1,5 +1,20 @@
 export type DatasetStatus = "metadata_only" | "available" | "failed" | "analyzed";
 
+export interface DownloadResource {
+  url: string;
+  format: string;
+}
+
+export interface ConceptMatch {
+  concept_id: string;
+  concept_type: "full_question" | "independent_variable" | "dependent_variable" | "population_or_geography" | "research_subject" | "synonym" | "search_term";
+  concept: string;
+  matched_terms: string[];
+  matched_fields: string[];
+  evidence: string[];
+  semantic_similarity_score: number | null;
+}
+
 export interface DatasetCardData {
   dataset_id: string;
   title: string;
@@ -12,8 +27,19 @@ export interface DatasetCardData {
   instance_count: number | null;
   feature_count: number | null;
   data_available: boolean | null;
+  source_id?: string | null;
+  landing_page_url?: string | null;
+  download_resources?: DownloadResource[];
+  subjects?: string[];
+  geographic_coverage?: string[];
+  temporal_coverage?: string[];
+  doi?: string | null;
+  license?: string | null;
   data_status: DatasetStatus;
   preliminary_relevance_score: number | null;
+  semantic_similarity_score?: number | null;
+  score_type?: "semantic_similarity" | "keyword_fallback" | "legacy_gemini";
+  concept_matches?: ConceptMatch[];
   relevance_explanation: string;
   score_confidence: "low" | "medium" | "high";
   matched_research_variables?: string[];
@@ -37,6 +63,7 @@ export interface DiscoveryResponse {
   explanation: string;
   warnings: string[];
   processing_mode: "gemini" | "partial_gemini" | "keyword_fallback";
+  ranking_status?: "semantic_embeddings" | "keyword_fallback" | "unavailable" | "demo_cached";
 }
 
 export interface NumericSummary {
