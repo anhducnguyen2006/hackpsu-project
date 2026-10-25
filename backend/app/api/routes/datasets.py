@@ -21,6 +21,7 @@ from app.discovery.uci import UCIRepositoryError, UCIRepositoryService
 from app.discovery.zenodo import ZenodoRepositoryError
 from app.ingestion.guard import DownloadRejected
 from app.ingestion.retrieve import SelectionError, list_resources
+from app.research.repository import HistoryStorageError, ResearchQueryAccessError
 
 router = APIRouter(
     prefix="/dev",
@@ -86,7 +87,14 @@ def analyze_selected_dataset(
                 request.research_question,
                 request.resource_id,
                 user_sub=principal.sub,
+                research_query_id=request.research_query_id,
             )
+        except ResearchQueryAccessError as error:
+            raise HTTPException(status_code=404, detail="Research query was not found.") from error
+        except HistoryStorageError as error:
+            raise HTTPException(
+                status_code=503, detail="Research storage could not verify this query."
+            ) from error
         except SelectionError as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
         except ValueError as error:

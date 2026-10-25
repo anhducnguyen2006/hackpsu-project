@@ -152,7 +152,11 @@ def test_database_failure_does_not_fail_discovery_response(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["datasets"][0]["dataset_id"] == "uci:320"
-    assert response.json()["warnings"] == []
+    assert response.json()["research_query_id"] is None
+    assert any(
+        "Research history could not be opened" in warning
+        for warning in response.json()["warnings"]
+    )
 
 
 def test_discovery_response_does_not_wait_for_slow_background_write(monkeypatch) -> None:

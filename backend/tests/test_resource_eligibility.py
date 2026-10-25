@@ -603,9 +603,10 @@ def test_discovery_route_returns_eligible_records_and_stays_authenticated(monkey
     )
     captured: dict[str, object] = {}
 
-    def capture(question, normalized_question, datasets, embedding_service=None, *, user_sub):
+    def capture(question, normalized_question, datasets, embedding_service=None, *, user_sub, research_query_id=None):
         captured["user_sub"] = user_sub
         captured["datasets"] = datasets
+        captured["research_query_id"] = research_query_id
         return 1
 
     monkeypatch.setattr(discovery_route, "service", service)

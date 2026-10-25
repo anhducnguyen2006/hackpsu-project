@@ -13,7 +13,7 @@ from app.demo import demo_search
 from app.discovery.embeddings import EmbeddingService
 from app.discovery.search import DiscoveryService, build_external_providers
 from app.discovery.uci import UCIRepositoryService
-from app.research.repository import persist_discovery_result
+from app.research.repository import create_owned_query, persist_discovery_result
 
 router = APIRouter(
     prefix="/discovery",
@@ -36,6 +36,7 @@ def _persist_discovery_result_background(
     dataset_payloads: list[dict],
     embedding_service: object | None,
     user_sub: str,
+    research_query_id: int | None = None,
 ) -> None:
     """Best-effort persistence with a fresh repository transaction.
 
@@ -60,6 +61,7 @@ def _persist_discovery_result_background(
             datasets=datasets,
             embedding_service=embedding_service,
             user_sub=user_sub.strip(),
+            research_query_id=research_query_id,
         )
         logger.info(
             "discovery stage=background_persistence elapsed_ms=%.1f query_id=%s datasets=%d",
@@ -116,6 +118,19 @@ def _search(
     ) = service.search_with_status(
         request.research_question, request.limit
     )
+    research_query_id = None
+    response_warnings = list(warnings)
+    try:
+        research_query_id = create_owned_query(
+            request.research_question,
+            interpretation.refined_question if interpretation else None,
+            principal.sub,
+        )
+    except Exception:
+        logger.warning("discovery query preassignment failed")
+        response_warnings.append(
+            "Research history could not be opened for this search. Results are still available."
+        )
     background_tasks.add_task(
         _persist_discovery_result_background,
         request.research_question,
@@ -123,6 +138,7 @@ def _search(
         [dataset.model_dump(mode="json") for dataset in datasets],
         getattr(service, "embedding_service", None),
         principal.sub,
+        research_query_id,
     )
     explanation = (
         "Results are ranked using verified repository metadata and local semantic "
@@ -135,9 +151,10 @@ def _search(
         interpretation=interpretation,
         datasets=datasets,
         explanation=explanation,
-        warnings=warnings,
+        warnings=response_warnings,
         processing_mode=processing_mode,
         ranking_status=ranking_status,
+        research_query_id=research_query_id,
     )
     logger.info(
         "discovery stage=serialization elapsed_ms=%.1f datasets=%d mode=%s",

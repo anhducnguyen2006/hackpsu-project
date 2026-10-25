@@ -288,6 +288,7 @@ class DatasetResult(UCIRecord):
     eligibility_reason: str | None = None
     download_performed: bool = False
     source_version: str | None = None
+    verification_candidates: list[DownloadResource] = Field(default_factory=list)
     data_status: Literal["metadata_only", "available", "failed", "analyzed"]
     preliminary_relevance_score: int | None = Field(default=None, ge=0, le=100)
     semantic_similarity_score: float | None = Field(default=None, ge=-1, le=1)
@@ -311,6 +312,7 @@ class DiscoveryResponse(BaseModel):
     ranking_status: Literal[
         "semantic_embeddings", "keyword_fallback", "unavailable", "demo_cached"
     ] = "unavailable"
+    research_query_id: int | None = None
 
 
 class DiscoveryGraphRequest(BaseModel):
@@ -355,6 +357,7 @@ class DatasetAnalysisCommand(BaseModel):
     dataset_id: str = Field(min_length=3, max_length=300)
     research_question: str = Field(min_length=10, max_length=2000)
     resource_id: str | None = Field(default=None, min_length=1, max_length=300)
+    research_query_id: int | None = Field(default=None, ge=1)
 
 
 class DatasetResourcesResponse(BaseModel):
@@ -486,6 +489,10 @@ class DatasetAnalysisResponse(BaseModel):
         "unverified",
     ] | None = None
     download_performed: bool = False
+    research_query_id: int | None = None
+    history_saved: bool = False
+    source_doi: str | None = None
+    source_version: str | None = None
 
 
 class ExploreRequest(BaseModel):

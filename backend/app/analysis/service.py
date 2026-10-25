@@ -26,8 +26,12 @@ from app.ingestion.retrieve import SelectionError, load_table
 from app.profiling.profiler import DataProfiler
 from app.analysis.exploratory import ExploratoryAnalyzer
 from app.research.repository import (
+    ResearchQueryAccessError,
+    create_owned_query,
     get_cached_research_assessment,
     get_dataset_profile,
+    get_dataset_profile_row,
+    require_owned_query,
     save_research_assessment,
     save_dataset_profile,
     upsert_dataset,
@@ -52,11 +56,19 @@ class DatasetAnalysisService:
         dataset_id: str,
         request: AnalysisRequest,
         user_sub: str | None = None,
+        research_query_id: int | None = None,
     ) -> DatasetAnalysisResponse:
         # The response cache includes the verified subject so one researcher's
         # assessment is not reused for another account. Dataset frames stay
         # shared because they are public source data, not private research.
-        key = (user_sub or "", dataset_id, request.research_question.strip().lower())
+        self._require_supplied_query(research_query_id, user_sub)
+        key = (
+            user_sub or "",
+            dataset_id,
+            "",
+            request.research_question.strip().lower(),
+            str(research_query_id or ""),
+        )
         if key in self._cache:
             return self._cache[key]
         numeric_id = self._parse_id(dataset_id)
@@ -68,7 +80,7 @@ class DatasetAnalysisService:
             self._data_cache[numeric_id] = fetched
             source_record, dataframe, source_metadata = fetched
             source_version = self._source_version(dataframe, source_metadata)
-            profile, dataset_database_id = self._cached_or_profile(
+            profile, dataset_database_id, profile_id = self._cached_or_profile(
                 numeric_id,
                 source_record,
                 source_version,
@@ -87,22 +99,22 @@ class DatasetAnalysisService:
             self._cache[key] = response
             return response
 
-        assessment: ResearchAssessment | None = None
-        try:
-            if interpretation is None:
-                raise RuntimeError("Research question interpretation was unavailable.")
-            assessment = self._cached_or_assess(
-                request.research_question,
-                interpretation,
-                metadata,
-                profile,
-                source_version,
-                dataset_database_id,
-                warnings,
-                user_sub,
-            )
-        except Exception as error:
-            warnings.append(f"AI suitability assessment unavailable: {self._safe(error)}")
+        query_id = self._optional_query(
+            request.research_question, user_sub, research_query_id, warnings
+        )
+        assessment, history_saved = self._assess(
+            request.research_question,
+            interpretation,
+            metadata,
+            profile,
+            source_version,
+            dataset_database_id,
+            warnings,
+            user_sub,
+            query_id,
+            profile_id,
+            "",
+        )
         response = DatasetAnalysisResponse(
             dataset=metadata,
             data_status="analyzed",
@@ -110,8 +122,11 @@ class DatasetAnalysisService:
             assessment=assessment,
             ai_assessment_status="available" if assessment else "unavailable",
             warnings=warnings,
+            research_query_id=query_id,
+            history_saved=history_saved,
         )
-        self._cache[key] = response
+        if not user_sub or history_saved:
+            self._cache[key] = response
         return response
 
     def analyze_selected(
@@ -120,19 +135,23 @@ class DatasetAnalysisService:
         research_question: str,
         resource_id: str | None = None,
         user_sub: str | None = None,
+        research_query_id: int | None = None,
     ) -> DatasetAnalysisResponse:
         """Analyze UCI natively or one re-resolved external file."""
+        self._require_supplied_query(research_query_id, user_sub)
         if dataset_id.startswith("uci:"):
             return self.analyze(
                 dataset_id,
                 AnalysisRequest(research_question=research_question),
                 user_sub=user_sub,
+                research_query_id=research_query_id,
             )
         key = (
             user_sub or "",
             dataset_id,
             resource_id or "",
             research_question.strip().lower(),
+            str(research_query_id or ""),
         )
         cached = self._cache.get(key)
         if cached is not None:
@@ -166,27 +185,33 @@ class DatasetAnalysisService:
             "download_resources": [resource],
             "data_available": True,
         })
-        source_version = verified.source_version or resource.checksum or resolved_id
-        profile, dataset_database_id = self._profile_record(
-            verified, source_version, frame, interpretation, warnings
+        source_version = verified.source_version or "unversioned"
+        resource_key = self._resource_key(resolved_id, resource.checksum)
+        profile, dataset_database_id, profile_id = self._profile_record(
+            verified,
+            source_version,
+            frame,
+            interpretation,
+            warnings,
+            resource_key,
         )
         metadata = self._public_record(verified)
-        assessment: ResearchAssessment | None = None
-        try:
-            if interpretation is None:
-                raise RuntimeError("Research question interpretation was unavailable.")
-            assessment = self._cached_or_assess(
-                research_question,
-                interpretation,
-                metadata,
-                profile,
-                source_version,
-                dataset_database_id,
-                warnings,
-                user_sub,
-            )
-        except Exception as error:
-            warnings.append(f"AI suitability assessment unavailable: {self._safe(error)}")
+        query_id = self._optional_query(
+            research_question, user_sub, research_query_id, warnings
+        )
+        assessment, history_saved = self._assess(
+            research_question,
+            interpretation,
+            metadata,
+            profile,
+            source_version,
+            dataset_database_id,
+            warnings,
+            user_sub,
+            query_id,
+            profile_id,
+            resource_key,
+        )
         response = DatasetAnalysisResponse(
             dataset=metadata,
             data_status="analyzed",
@@ -197,9 +222,104 @@ class DatasetAnalysisService:
             analyzed_resource=resource,
             eligibility_status="download_verified",
             download_performed=True,
+            research_query_id=query_id,
+            history_saved=history_saved,
+            source_doi=verified.doi,
+            source_version=source_version,
         )
-        self._cache[key] = response
+        if not user_sub or history_saved:
+            self._cache[key] = response
         return response
+
+    @staticmethod
+    def _require_supplied_query(
+        research_query_id: int | None, user_sub: str | None
+    ) -> None:
+        if research_query_id is None:
+            return
+        if not user_sub:
+            raise ResearchQueryAccessError("Research query was not found.")
+        require_owned_query(research_query_id, user_sub)
+
+    @staticmethod
+    def _optional_query(
+        question: str,
+        user_sub: str | None,
+        research_query_id: int | None,
+        warnings: list[str],
+    ) -> int | None:
+        if research_query_id is not None:
+            return research_query_id
+        if not user_sub:
+            return None
+        try:
+            return create_owned_query(question, None, user_sub)
+        except Exception:
+            warnings.append(
+                "Research history was not saved because storage is unavailable. The statistical result is still available."
+            )
+            return None
+
+    def _assess(
+        self,
+        research_question: str,
+        interpretation: ResearchInterpretation | None,
+        dataset: Any,
+        profile: DataProfile,
+        source_version: str,
+        dataset_database_id: int | None,
+        warnings: list[str],
+        user_sub: str | None,
+        query_id: int | None,
+        profile_id: int | None,
+        resource_key: str,
+    ) -> tuple[ResearchAssessment | None, bool]:
+        try:
+            if interpretation is None:
+                raise RuntimeError("Research question interpretation was unavailable.")
+            return self._cached_or_assess(
+                research_question,
+                interpretation,
+                dataset,
+                profile,
+                source_version,
+                dataset_database_id,
+                warnings,
+                user_sub,
+                query_id,
+                profile_id,
+                resource_key,
+            )
+        except Exception as error:
+            warnings.append(
+                f"AI suitability assessment unavailable: {self._safe(error)}"
+            )
+            return None, False
+
+    @staticmethod
+    def _resource_key(file_id: str, checksum: str | None) -> str:
+        token = file_id.strip()
+        if not token:
+            raise SelectionError("The selected file has no stable identifier.")
+        digest = checksum.strip() if checksum else ""
+        if digest:
+            return f"{token}@{digest}"
+        return token
+
+    @staticmethod
+    def _profile_row_id(
+        dataset_database_id: int, source_version: str, resource_key: str
+    ) -> int | None:
+        try:
+            row = get_dataset_profile_row(
+                dataset_database_id,
+                source_version,
+                DataProfiler.PROFILER_VERSION,
+                resource_key,
+            )
+        except Exception:
+            return None
+        return None if row is None else row[0]
 
     def _profile_record(
         self,
@@ -208,8 +328,10 @@ class DatasetAnalysisService:
         dataframe: pd.DataFrame,
         interpretation: ResearchInterpretation | None,
         warnings: list[str],
-    ) -> tuple[DataProfile, int | None]:
+        resource_key: str = "",
+    ) -> tuple[DataProfile, int | None, int | None]:
         dataset_database_id: int | None = None
+        profile_id: int | None = None
         cached_profile: dict[str, Any] | None = None
         try:
             dataset_database_id = upsert_dataset(record)
@@ -217,30 +339,41 @@ class DatasetAnalysisService:
                 dataset_database_id,
                 source_version,
                 self.profiler.PROFILER_VERSION,
+                resource_key=resource_key,
             )
+            if cached_profile is not None:
+                profile_id = self._profile_row_id(
+                    dataset_database_id, source_version, resource_key
+                )
         except Exception:
             warnings.append(
                 "Persistent profile cache unavailable; computed profile was not cached."
             )
         if cached_profile is not None:
             try:
-                return DataProfile.model_validate(cached_profile), dataset_database_id
+                return (
+                    DataProfile.model_validate(cached_profile),
+                    dataset_database_id,
+                    profile_id,
+                )
             except Exception:
                 warnings.append("Stored profile was invalid and was recomputed.")
         profile = self.profiler.profile(dataframe, interpretation, {})
         if dataset_database_id is not None:
             try:
-                save_dataset_profile(
+                profile_id = save_dataset_profile(
                     dataset_database_id,
                     source_version,
                     self.profiler.PROFILER_VERSION,
                     DataProfile.model_validate(profile),
+                    resource_key=resource_key,
                 )
             except Exception:
                 warnings.append(
                     "Persistent profile cache save failed; computed profile is available."
                 )
-        return profile, dataset_database_id
+                profile_id = None
+        return profile, dataset_database_id, profile_id
 
     @staticmethod
     def _public_record(record) -> UCIRecord:
@@ -265,8 +398,9 @@ class DatasetAnalysisService:
         interpretation: ResearchInterpretation | None,
         variable_descriptions: dict[str, str],
         warnings: list[str],
-    ) -> tuple[DataProfile, int | None]:
+    ) -> tuple[DataProfile, int | None, int | None]:
         dataset_database_id: int | None = None
+        profile_id: int | None = None
         cached_profile: dict[str, Any] | None = None
         try:
             dataset_database_id = upsert_dataset(dataset_record_from_uci(source_record))
@@ -275,6 +409,10 @@ class DatasetAnalysisService:
                 source_version,
                 self.profiler.PROFILER_VERSION,
             )
+            if cached_profile is not None and dataset_database_id is not None:
+                profile_id = self._profile_row_id(
+                    dataset_database_id, source_version, ""
+                )
         except Exception as error:
             logger.warning(
                 "dataset_profile_cache event=unavailable dataset_id=%s",
@@ -291,7 +429,7 @@ class DatasetAnalysisService:
                     "dataset_profile_cache event=hit dataset_id=%s",
                     numeric_id,
                 )
-                return profile, dataset_database_id
+                return profile, dataset_database_id, profile_id
             except Exception:
                 logger.warning(
                     "dataset_profile_cache event=invalid dataset_id=%s",
@@ -308,7 +446,7 @@ class DatasetAnalysisService:
         # non-fatal because the current analysis result is still trustworthy.
         if dataset_database_id is not None:
             try:
-                save_dataset_profile(
+                profile_id = save_dataset_profile(
                     dataset_database_id,
                     source_version,
                     self.profiler.PROFILER_VERSION,
@@ -322,7 +460,8 @@ class DatasetAnalysisService:
                 warnings.append(
                     "Persistent profile cache save failed; computed profile is available."
                 )
-        return profile, dataset_database_id
+                profile_id = None
+        return profile, dataset_database_id, profile_id
 
     def _cached_or_assess(
         self,
@@ -334,7 +473,10 @@ class DatasetAnalysisService:
         dataset_database_id: int | None,
         warnings: list[str],
         user_sub: str | None = None,
-    ) -> ResearchAssessment:
+        query_id: int | None = None,
+        profile_id: int | None = None,
+        resource_key: str = "",
+    ) -> tuple[ResearchAssessment, bool]:
         cache_key = self._assessment_cache_key(
             research_question,
             interpretation,
@@ -342,6 +484,8 @@ class DatasetAnalysisService:
             profile,
             source_version,
             user_sub,
+            query_id,
+            resource_key,
         )
         if dataset_database_id is not None:
             try:
@@ -352,7 +496,7 @@ class DatasetAnalysisService:
                         "gemini_suitability_cache event=hit dataset_id=%s",
                         dataset.dataset_id,
                     )
-                    return assessment
+                    return assessment, query_id is not None
             except Exception:
                 logger.warning(
                     "gemini_suitability_cache event=read_failed dataset_id=%s",
@@ -377,6 +521,8 @@ class DatasetAnalysisService:
                     model=settings.gemini_model,
                     assessment_version=GeminiService.SUITABILITY_PROMPT_VERSION,
                     assessment=assessment,
+                    query_id=query_id,
+                    profile_id=profile_id,
                 )
             except Exception:
                 logger.warning(
@@ -386,7 +532,9 @@ class DatasetAnalysisService:
                 warnings.append(
                     "Suitability assessment cache save failed; generated assessment is available."
                 )
-        return assessment
+                return assessment, False
+            return assessment, query_id is not None
+        return assessment, False
 
     @staticmethod
     def _assessment_cache_key(
@@ -396,10 +544,14 @@ class DatasetAnalysisService:
         profile: DataProfile,
         source_version: str,
         user_sub: str | None = None,
+        query_id: int | None = None,
+        resource_key: str = "",
     ) -> str:
         normalized_question = " ".join(research_question.strip().split()).lower()
         payload = {
             "owner_sub": user_sub or "",
+            "research_query_id": query_id,
+            "resource_key": resource_key,
             "normalized_research_question": normalized_question,
             "interpretation": interpretation.model_dump(mode="json"),
             "dataset_identity": {

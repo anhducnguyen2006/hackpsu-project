@@ -53,11 +53,56 @@ def _row_to_query(row: tuple[Any, ...]) -> ResearchQuery:
     }
 
 
+class ResearchQueryAccessError(LookupError):
+    """The query is missing or belongs to a different authenticated subject."""
+
+
+class HistoryStorageError(RuntimeError):
+    """TigerData could not be used to verify or save a research query."""
+
+
 def _require_owner(user_sub: str) -> str:
     """Use only a verified subject. Client-supplied ids never reach this helper."""
     if not isinstance(user_sub, str) or not user_sub.strip():
         raise ValueError("A verified research owner is required.")
     return user_sub.strip()
+
+
+def create_owned_query(
+    question: str, normalized_question: str | None, user_sub: str
+) -> int:
+    """Insert one query owned by the verified subject and return its id."""
+    owner = _require_owner(user_sub)
+    stored_normalized_question = normalized_question or question
+    with get_connection() as connection:
+        row = connection.execute(
+            """
+            INSERT INTO research_queries
+                (question, normalized_question, user_sub)
+            VALUES (%s, %s, %s)
+            RETURNING id
+            """,
+            (question, stored_normalized_question, owner),
+        ).fetchone()
+        if row is None:
+            raise RuntimeError("The research query insert returned no ID")
+        connection.commit()
+        return int(row[0])
+
+
+def require_owned_query(query_id: int, user_sub: str) -> int:
+    """Confirm a query id belongs to this subject. Missing and foreign ids match."""
+    try:
+        found = get_research_question(query_id, user_sub)
+    except ValueError:
+        raise
+    except Exception as error:
+        raise HistoryStorageError(
+            "Research storage could not verify this query."
+        ) from error
+    if found is None:
+        raise ResearchQueryAccessError("Research query was not found.")
+    return query_id
 
 
 def save_research_question(
@@ -347,6 +392,7 @@ def persist_discovery_result(
     embedding_service: Any | None = None,
     *,
     user_sub: str,
+    research_query_id: int | None = None,
 ) -> int:
     """Atomically persist a live discovery query, datasets, and relationships."""
     owner = _require_owner(user_sub)
@@ -370,7 +416,40 @@ def persist_discovery_result(
                 (time.perf_counter() - embedding_started) * 1000,
             )
             query_started = time.perf_counter()
-            if embedding is None:
+            if research_query_id is not None:
+                query_row = connection.execute(
+                    """
+                    SELECT id
+                    FROM research_queries
+                    WHERE id = %s
+                      AND user_sub = %s
+                    """,
+                    (research_query_id, owner),
+                ).fetchone()
+                if query_row is None:
+                    raise RuntimeError(
+                        "The research query is not available for this user."
+                    )
+                query_id = int(query_row[0])
+                if embedding is not None:
+                    connection.execute(
+                        """
+                        UPDATE research_queries
+                        SET normalized_question = %s,
+                            embedding = %s::vector,
+                            embedding_model = %s
+                        WHERE id = %s
+                          AND user_sub = %s
+                        """,
+                        (
+                            stored_normalized_question,
+                            embedding,
+                            embedding_model,
+                            query_id,
+                            owner,
+                        ),
+                    )
+            elif embedding is None:
                 query_row = connection.execute(
                     """
                     INSERT INTO research_queries
@@ -380,6 +459,9 @@ def persist_discovery_result(
                     """,
                     (question, stored_normalized_question, owner),
                 ).fetchone()
+                if query_row is None:
+                    raise RuntimeError("The discovery query insert returned no ID")
+                query_id = int(query_row[0])
             else:
                 query_row = connection.execute(
                     """
@@ -396,13 +478,13 @@ def persist_discovery_result(
                         owner,
                     ),
                 ).fetchone()
+                if query_row is None:
+                    raise RuntimeError("The discovery query insert returned no ID")
+                query_id = int(query_row[0])
             logger.info(
                 "discovery persistence stage=research_question_insert elapsed_ms=%.1f",
                 (time.perf_counter() - query_started) * 1000,
             )
-            if query_row is None:
-                raise RuntimeError("The discovery query insert returned no ID")
-            query_id = int(query_row[0])
 
             upsert_started = time.perf_counter()
             relationship_started = time.perf_counter()
@@ -496,21 +578,40 @@ def find_similar_research_questions(
 
 
 def get_dataset_profile(
-    dataset_id: int, source_version: str, profiler_version: str
+    dataset_id: int,
+    source_version: str,
+    profiler_version: str,
+    resource_key: str = "",
 ) -> dict[str, Any] | None:
-    """Load a profile only when dataset and both version keys match exactly."""
+    """Load a profile only when the dataset, file, and both versions match."""
+    row = get_dataset_profile_row(
+        dataset_id, source_version, profiler_version, resource_key
+    )
+    return None if row is None else row[1]
+
+
+def get_dataset_profile_row(
+    dataset_id: int,
+    source_version: str,
+    profiler_version: str,
+    resource_key: str = "",
+) -> tuple[int, dict[str, Any]] | None:
+    """Return the profile row id and JSON for one file version."""
     with get_connection() as connection:
         row = connection.execute(
             """
-            SELECT profile
+            SELECT id, profile
             FROM dataset_profiles
             WHERE dataset_id = %s
               AND source_version = %s
               AND profiler_version = %s
+              AND resource_key = %s
             """,
-            (dataset_id, source_version, profiler_version),
+            (dataset_id, source_version, profiler_version, resource_key),
         ).fetchone()
-        return None if row is None else row[0]
+        if row is None:
+            return None
+        return int(row[0]), row[1]
 
 
 def save_dataset_profile(
@@ -518,8 +619,9 @@ def save_dataset_profile(
     source_version: str,
     profiler_version: str,
     profile: DataProfile,
+    resource_key: str = "",
 ) -> int:
-    """Persist one complete, JSON-compatible profile using the cache key."""
+    """Persist one complete profile for one dataset file and version."""
     profile_payload = DataProfile.model_validate(profile).model_dump(mode="json")
     connection = None
     try:
@@ -527,9 +629,9 @@ def save_dataset_profile(
             row = connection.execute(
                 """
                 INSERT INTO dataset_profiles
-                    (dataset_id, source_version, profiler_version, profile)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (dataset_id, source_version, profiler_version)
+                    (dataset_id, source_version, profiler_version, resource_key, profile)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (dataset_id, resource_key, source_version, profiler_version)
                 DO UPDATE SET profile = EXCLUDED.profile
                 RETURNING id
                 """,
@@ -537,6 +639,7 @@ def save_dataset_profile(
                     dataset_id,
                     source_version,
                     profiler_version,
+                    resource_key,
                     Jsonb(profile_payload),
                 ),
             ).fetchone()
@@ -602,8 +705,9 @@ def save_research_assessment(
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (cache_key) WHERE cache_key IS NOT NULL
                 DO UPDATE SET
+                    query_id = COALESCE(research_assessments.query_id, EXCLUDED.query_id),
                     dataset_id = EXCLUDED.dataset_id,
-                    profile_id = EXCLUDED.profile_id,
+                    profile_id = COALESCE(research_assessments.profile_id, EXCLUDED.profile_id),
                     model = EXCLUDED.model,
                     assessment_version = EXCLUDED.assessment_version,
                     assessment = EXCLUDED.assessment,

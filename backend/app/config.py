@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     dataverse_enabled: bool = True
     dataverse_api_url: str = "https://dataverse.harvard.edu/api/search"
     dataverse_results_limit: int = 5
+    # Exact Harvard Dataverse object-store hostnames allowed only as redirects
+    # from dataverse.harvard.edu/api/access/datafile/{id}. Never an initial host.
+    # Comma-separated. No wildcards. Observed production host: dvn-cloud-iqss.s3.amazonaws.com.
+    dataverse_storage_hosts: str = "dvn-cloud-iqss.s3.amazonaws.com"
     zenodo_enabled: bool = True
     zenodo_api_url: str = "https://zenodo.org/api/records/"
     zenodo_results_limit: int = 5

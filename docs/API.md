@@ -105,7 +105,9 @@ When a dataset has one supported file, `resource_id` may be omitted. When it has
 }
 ```
 
-The response adds `analyzed_resource`, `eligibility_status`, and `download_performed`. `final_score` is the Python suitability score from Gemini's criteria, not the discovery cosine. A database outage does not discard the computed profile; the warning says the profile was not cached.
+The response adds `analyzed_resource`, `eligibility_status`, `download_performed`, `research_query_id`, and `history_saved`. `final_score` is the Python suitability score from Gemini's criteria, not the discovery cosine. A database outage does not discard the computed profile or a successful Gemini assessment; `history_saved` stays false and the warning says storage failed. `ai_assessment_status` is independent of storage.
+
+Harvard Dataverse file bytes may redirect once from `dataverse.harvard.edu/api/access/datafile/{id}` to the exact configured object-store host in `DATAVERSE_STORAGE_HOSTS` (default `dvn-cloud-iqss.s3.amazonaws.com`). That host is never accepted as an initial download URL. Arbitrary S3 buckets, private addresses, and credentialed URLs are rejected. Auth0 bearer tokens are never forwarded to Dataverse or storage.
 
 ## `POST /datasets/{dataset_id}/analyze`
 

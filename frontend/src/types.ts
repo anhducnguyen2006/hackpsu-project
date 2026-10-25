@@ -66,6 +66,7 @@ export interface DatasetCardData {
   matched_research_variables?: string[];
   missing_or_unverified_variables?: string[];
   classification?: "relevant" | "partially_relevant" | "irrelevant";
+  verification_candidates?: DownloadResource[];
 }
 
 export interface ResearchInterpretation {
@@ -90,6 +91,7 @@ export interface DiscoveryResponse {
   warnings: string[];
   processing_mode: "gemini" | "partial_gemini" | "keyword_fallback";
   ranking_status?: "semantic_embeddings" | "keyword_fallback" | "unavailable" | "demo_cached";
+  research_query_id?: number | null;
 }
 
 export interface ResearchHistoryItem {
@@ -228,6 +230,10 @@ export interface DatasetAnalysisResponse {
   analyzed_resource?: DownloadResource | null;
   eligibility_status?: EligibilityStatus | null;
   download_performed?: boolean;
+  research_query_id?: number | null;
+  history_saved?: boolean;
+  source_doi?: string | null;
+  source_version?: string | null;
 }
 
 export interface ExploratoryAnalysisResponse {

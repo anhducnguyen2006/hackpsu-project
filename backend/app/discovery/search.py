@@ -715,6 +715,7 @@ class DiscoveryService:
             "eligibility_reason": record.eligibility_reason,
             "download_performed": record.download_performed,
             "source_version": record.source_version,
+            "verification_candidates": record.verification_candidates,
         }
 
     @staticmethod

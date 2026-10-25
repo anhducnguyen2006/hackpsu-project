@@ -40,9 +40,11 @@ CREATE TABLE dataset_profiles (
     dataset_id BIGINT REFERENCES datasets(id),
     source_version TEXT NOT NULL,
     profiler_version TEXT NOT NULL,
+    resource_key TEXT NOT NULL DEFAULT '',
     profile JSONB NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(dataset_id, source_version, profiler_version)
+    CONSTRAINT dataset_profiles_resource_version_key
+        UNIQUE (dataset_id, resource_key, source_version, profiler_version)
 );
 
 -- 5. Question-specific assessments
