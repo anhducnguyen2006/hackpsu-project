@@ -144,6 +144,7 @@ export interface NumericSummary {
 
 export interface ColumnProfile {
   name: string;
+  variable_description: string | null;
   data_type: string;
   measurement_type: string;
   missing_count: number;
@@ -210,8 +211,8 @@ export interface ExploratoryAnalysisResponse {
   dataset_id: string;
   independent_variable: string;
   outcome_variable: string;
-  independent_measurement_type: "ordinal_or_encoded_numeric" | "categorical";
-  outcome_measurement_type: "numeric";
+  independent_measurement_type: "continuous" | "binary" | "ordinal" | "categorical";
+  outcome_measurement_type: "continuous" | "binary" | "ordinal" | "categorical";
   categories: {
     category: unknown;
     observations: number;

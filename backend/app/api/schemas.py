@@ -321,10 +321,12 @@ class CategoryCount(BaseModel):
 
 class ColumnProfile(BaseModel):
     name: str
+    variable_description: str | None = None
     data_type: str
     measurement_type: Literal[
-        "numeric",
-        "ordinal_or_encoded_numeric",
+        "continuous",
+        "binary",
+        "ordinal",
         "categorical",
         "identifier_like",
     ]
@@ -424,8 +426,8 @@ class ExploratoryAnalysisResponse(BaseModel):
     dataset_id: str
     independent_variable: str
     outcome_variable: str
-    independent_measurement_type: Literal["ordinal_or_encoded_numeric", "categorical"]
-    outcome_measurement_type: Literal["numeric"]
+    independent_measurement_type: Literal["continuous", "binary", "ordinal", "categorical"]
+    outcome_measurement_type: Literal["continuous", "binary", "ordinal", "categorical"]
     categories: list[ExploratoryCategory]
     missing_independent_count: int
     missing_outcome_count: int

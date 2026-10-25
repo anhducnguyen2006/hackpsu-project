@@ -131,7 +131,7 @@ Response example:
   "dataset_id": "uci:320",
   "independent_variable": "studytime",
   "outcome_variable": "G3",
-  "independent_measurement_type": "ordinal_or_encoded_numeric",
+  "independent_measurement_type": "ordinal",
   "outcome_measurement_type": "numeric",
   "categories": [{
     "category": 1,
