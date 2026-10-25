@@ -23,7 +23,7 @@ it.each(["/dashboard", "/dashboard/", "/dashboard?source=landing"])("opens the r
   window.history.replaceState(null, "", path);
   render(<AppEntry />);
   expect(screen.getByText("Static preview · cached UCI example")).toBeVisible();
-  expect(screen.getByRole("navigation", { name: "Preview stages" }).children).toHaveLength(5);
+  expect(screen.getByRole("navigation", { name: "Research navigation" }).children).toHaveLength(7);
   expect(screen.queryByTestId("research-world")).not.toBeInTheDocument();
 });
 
@@ -39,7 +39,7 @@ it.each(["/", "/?source=preview"])(
     expect(screen.getByRole("link", { name: "Explore research preview" })).toHaveAttribute("href", "/dashboard");
     expect(screen.getByRole("link", { name: "DataOPedia home" })).toHaveAttribute("href", "/");
     expect(screen.queryByRole("contentinfo")).not.toBeInTheDocument();
-    expect(screen.queryByRole("navigation", { name: "Preview stages" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Research navigation" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("research-world")).not.toBeInTheDocument();
     expect(request).not.toHaveBeenCalled();
   },

@@ -4,7 +4,9 @@ Last verified: 2026-10-24
 
 ## Implemented
 
-The backend uses Python logging for discovery stage timings, including interpretation, catalog retrieval, candidate filtering, metadata enrichment, reranking, response fallback, serialization, and cache hits. Gemini logs aggregate prompt/output/total token counts when usage metadata is exposed. It does not log API keys.
+The backend uses Python logging for discovery stage timings, including interpretation, catalog retrieval, candidate filtering, metadata enrichment, vector embedding/cosine similarity, reranking, response fallback, serialization, and cache hits. Research persistence logs connection acquisition, embedding generation, research-question insert, dataset metadata upserts, relationship inserts, transaction commit, and total persistence time. Gemini logs aggregate prompt/output/total token counts when usage metadata is exposed. It does not log API keys.
+
+Discovery history persistence is scheduled with FastAPI `BackgroundTasks` because it is nonessential to the live result. The task receives detached scalar/JSON dataset data, opens its own pooled connection, and commits the question, dataset upserts, and relationships in one transaction. Only after that commit, it runs bounded semantic and shared-dataset graph updates scoped to the new query, using fresh pooled connections rather than a request-scoped session. Background tasks are best-effort rather than durable jobs: work may be lost if the process or server terminates before the task completes. Persistence and graph-update failures are logged with task type and error type, without exception text or credentials, and do not change a successful discovery response.
 
 External calls have bounded timeouts. Gemini uses the configured request timeout and bounded retries for selected transient statuses; 429 is not automatically retried. Gemini errors are classified as quota/rate limit, model unavailable, temporary service unavailability, request timeout, or generic request failure. Analysis sanitizes known credential-like error fragments.
 
