@@ -15,6 +15,10 @@ createRoot(document.getElementById("root")!).render(
       domain="dev-cavt8qsoguvw8bjv.us.auth0.com"
       clientId="HAeCwrM0uklvSub6tBLwcPOIsjVNKyAK"
       authorizationParams={{ redirect_uri: window.location.origin }}
+      onRedirectCallback={() => {
+        window.history.replaceState(null, "", "/dashboard");
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }}
     >
       <AppEntry authControls={<AuthControls />} />
     </Auth0Provider>

@@ -55,7 +55,7 @@ export default function EvidenceWall() {
     <div className={styles.editorial}>
       <h2 id="evidence-title">Finding the right data shouldn't be the hardest part of research.</h2>
       <p>Across disciplines, researchers face scattered sources, incomplete metadata, and hours of preparation before analysis can even begin.</p>
-      <a className={styles.action} href="/">Explore research preview <span aria-hidden="true">↗</span></a>
+      <a className={styles.action} href="/dashboard">Explore research preview <span aria-hidden="true">↗</span></a>
     </div>
     <div className={styles.tools}>
       <button type="button" className={styles.pause} onClick={() => setPaused(value => !value)} aria-pressed={paused}>

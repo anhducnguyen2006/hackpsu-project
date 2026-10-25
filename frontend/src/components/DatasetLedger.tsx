@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
-import type { DatasetCardData, DatasetGraphResponse, DiscoveryResponse } from "../types";
-import { DatasetGraph } from "./DatasetGraph";
+import type { DatasetCardData, DiscoveryResponse } from "../types";
 import { EvidenceTag } from "./EvidenceTag";
 
 function sourceUrl(dataset: DatasetCardData) { return dataset.landing_page_url ?? dataset.repository_url; }
@@ -10,18 +9,17 @@ function scoreLabel(dataset: DatasetCardData) {
   return "Unavailable";
 }
 
-export function DatasetLedger({ datasets, discovery, analysisMode = "preview", analysisLoading = false, analysisError = "", onOpenAnalysis, graph, graphLoading = false, graphError = "" }: { datasets: DatasetCardData[]; discovery?: DiscoveryResponse | null; analysisMode?: "preview" | "live"; analysisLoading?: boolean; analysisError?: string; onOpenAnalysis: (datasetId: string) => void; graph?: DatasetGraphResponse | null; graphLoading?: boolean; graphError?: string }) {
+export function DatasetLedger({ datasets, discovery, analysisMode = "preview", analysisLoading = false, analysisError = "", onOpenAnalysis, onOpenGraph }: { datasets: DatasetCardData[]; discovery?: DiscoveryResponse | null; analysisMode?: "preview" | "live"; analysisLoading?: boolean; analysisError?: string; onOpenAnalysis: (datasetId: string) => void; onOpenGraph?: () => void }) {
   const [expanded, setExpanded] = useState<string[]>([]);
   const [source, setSource] = useState("all");
   const [sort, setSort] = useState<"semantic" | "original">("semantic");
-  const [viewMode, setViewMode] = useState<"cards" | "graph">("cards");
   const sources = useMemo(() => [...new Set(datasets.map((dataset) => dataset.source))].sort(), [datasets]);
   const visible = useMemo(() => datasets.filter((dataset) => source === "all" || dataset.source === source).sort((a, b) => sort === "semantic" ? (b.semantic_similarity_score ?? -1) - (a.semantic_similarity_score ?? -1) : 0), [datasets, source, sort]);
   const partial = discovery?.warnings?.length;
   return <section className="workspace-grid ledger-page" aria-labelledby="datasets-title">
     <div className="workspace-content"><p className="eyebrow">Research instrument / 03 — Datasets</p><h1 id="datasets-title">Datasets</h1><p className="section-deck">{discovery ? discovery.explanation : "Two cached UCI records surfaced from metadata. Relevance is preliminary and based on documented terms."}</p>
-      <div className="view-toggle" aria-label="Dataset result view"><span className="data-label">View</span><div role="group" aria-label="Choose dataset view"><button type="button" className={viewMode === "cards" ? "view-toggle-active" : ""} aria-pressed={viewMode === "cards"} onClick={() => setViewMode("cards")}>Cards</button><button type="button" className={viewMode === "graph" ? "view-toggle-active" : ""} aria-pressed={viewMode === "graph"} onClick={() => setViewMode("graph")}>Graph view</button></div></div>
-      <div hidden={viewMode !== "graph"}><DatasetGraph graph={graph ?? null} datasets={datasets} loading={graphLoading} error={graphError} /></div><div hidden={viewMode !== "cards"}>
+      <div className="view-toggle" aria-label="Dataset result view"><span className="data-label">View</span><div role="group" aria-label="Choose dataset view"><button type="button" className="view-toggle-active" aria-pressed={true}>Cards</button><button type="button"  aria-pressed={false} onClick={onOpenGraph} disabled={!onOpenGraph}>Graph view</button></div></div>
+      <div >
       {discovery && <div className="ledger-controls" aria-label="Dataset result controls"><label htmlFor="source-filter">Source repository<select id="source-filter" value={source} onChange={(event) => setSource(event.target.value)}><option value="all">All repositories</option>{sources.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label htmlFor="dataset-sort">Sort results<select id="dataset-sort" value={sort} onChange={(event) => setSort(event.target.value as "semantic" | "original")}><option value="semantic">Semantic similarity</option><option value="original">Original result order</option></select></label></div>}
       {partial ? <p className="warning-state" role="status">Some repository sources were unavailable. Results below are partial; inspect the source labels and warnings before drawing conclusions.</p> : null}
       {analysisError ? <p className="warning-state" role="alert">{analysisError} Retry from the dataset row.</p> : null}
