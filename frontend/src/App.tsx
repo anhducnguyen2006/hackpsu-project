@@ -7,6 +7,7 @@ import { DatasetLedger } from "./components/DatasetLedger";
 import { EXAMPLE_DATASETS } from "./demo/researchExample";
 import { EXAMPLE_ANALYSIS } from "./demo/researchExample";
 import { KnowledgeGraphShell } from "./components/KnowledgeGraphShell";
+import { AnalysisView } from "./components/AnalysisView";
 
 export type PreviewStage = "question" | "interpretation" | "datasets" | "graph" | "analysis";
 const stages: { key: PreviewStage; label: string }[] = [
@@ -24,7 +25,7 @@ function App() {
         {stages.map(({ key, label }, index) => <button type="button" key={key} aria-current={stage === key ? "page" : undefined} onClick={() => setStage(key)}><span className="nav-index" aria-hidden="true">0{index + 1}</span>{label}</button>)}
       </nav>
     </header>
-    <main id="main-content" className="stage-main">{stage === "question" ? <ResearchQuestion exampleQuestion={EXAMPLE_QUESTION} onExploreExample={() => setStage("interpretation")} /> : stage === "interpretation" ? <><InterpretationSheet interpretation={EXAMPLE_INTERPRETATION} processingMode="keyword_fallback" /><button type="button" className="secondary-action back-action" onClick={() => setStage("question")}>Revise question</button></> : stage === "datasets" ? <DatasetLedger datasets={EXAMPLE_DATASETS} onOpenAnalysis={() => setStage("analysis")} /> : stage === "graph" ? <KnowledgeGraphShell interpretation={EXAMPLE_INTERPRETATION} datasets={EXAMPLE_DATASETS} analysis={EXAMPLE_ANALYSIS} /> : <h1>{stages.find((item) => item.key === stage)?.label}</h1>}</main>
+    <main id="main-content" className="stage-main">{stage === "question" ? <ResearchQuestion exampleQuestion={EXAMPLE_QUESTION} onExploreExample={() => setStage("interpretation")} /> : stage === "interpretation" ? <><InterpretationSheet interpretation={EXAMPLE_INTERPRETATION} processingMode="keyword_fallback" /><button type="button" className="secondary-action back-action" onClick={() => setStage("question")}>Revise question</button></> : stage === "datasets" ? <DatasetLedger datasets={EXAMPLE_DATASETS} onOpenAnalysis={() => setStage("analysis")} /> : stage === "graph" ? <KnowledgeGraphShell interpretation={EXAMPLE_INTERPRETATION} datasets={EXAMPLE_DATASETS} analysis={EXAMPLE_ANALYSIS} /> : <AnalysisView analysis={EXAMPLE_ANALYSIS} />}</main>
     <footer className="site-footer">DataOPedia / Research instrument · Cached UCI example</footer>
   </div>;
 }

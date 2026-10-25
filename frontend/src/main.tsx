@@ -5,5 +5,6 @@ import "./styles/foundation.css";
 import "./styles/landing.css";
 import "./styles/workspace.css";
 import "./styles/graph.css";
+import "./styles/analysis.css";
 
 createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);
